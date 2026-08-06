@@ -378,7 +378,9 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 	}
 
 	for header, value := range mp.config.Load().Headers.AddHeaders {
-		r.Header.Set(header, value)
+		if r.Header.Get(header) == "" {
+			r.Header.Set(header, value)
+		}
 	}
 
 	if stripToken {
