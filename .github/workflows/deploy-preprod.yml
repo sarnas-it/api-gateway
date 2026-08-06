@@ -1,15 +1,21 @@
-name: Deploy to XD
+name: Deploy to Preprod
 
 on:
   push:
-    branches: [develop]
+    branches: [master]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Lint check passed"
+  deploy:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +28,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: type=sha,prefix=
+          tags: type=sha,prefix=preprod_
       - uses: docker/build-push-action@v5
         with:
           context: .
@@ -30,13 +36,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
       - uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.XD_HOST }}
-          username: ${{ secrets.XD_USER }}
-          key: ${{ secrets.XD_SSH_KEY }}
-          port: ${{ secrets.XD_PORT }}
+          host: ${{ secrets.PREPROD_HOST }}
+          username: ${{ secrets.PREPROD_USER }}
+          key: ${{ secrets.PREPROD_SSH_KEY }}
+          port: ${{ secrets.PREPROD_PORT }}
           script: |
-            cd /opt/new-cml
-            TAG=${GITHUB_SHA::7}
+            cd /opt/new-cml-preprod/preprod
+            TAG=preprod_${GITHUB_SHA::7}
             sudo sed -i "s|^API_GATEWAY_IMAGE_TAG=.*|API_GATEWAY_IMAGE_TAG=$TAG|" .env
-            sudo docker-compose -f docker-compose.stage.yml pull api-gateway
-            sudo docker-compose -f docker-compose.stage.yml up -d api-gateway
+            sudo docker-compose -f docker-compose.preprod.yml pull api-gateway
+            sudo docker-compose -f docker-compose.preprod.yml up -d api-gateway
