@@ -61,14 +61,8 @@ jobs:
           command_timeout: 5m
           script: |
             cd /opt/new-cml
-            export IMAGE_TAG=${{ github.sha }}
-            sed -i "s|image: ghcr.io/basili4-1982/api-gateway:.*|image: ghcr.io/basili4-1982/api-gateway:${IMAGE_TAG}|" docker-compose.stage.yml
-            # Прописываем volume для конфига, если ещё нет
-            if ! grep -q 'configs/gateway.yaml' docker-compose.stage.yml; then
-              sed -i '/api-gateway:/,/volumes:/{
-                /volumes:/a\      - ./configs/gateway.yaml:/etc/proxy/config.yaml:ro
-              }' docker-compose.stage.yml
-            fi
+            export API_GATEWAY_IMAGE_TAG=${{ github.sha }}
+            grep -q '^API_GATEWAY_IMAGE_TAG=' .env && sed -i "s|^API_GATEWAY_IMAGE_TAG=.*|API_GATEWAY_IMAGE_TAG=${API_GATEWAY_IMAGE_TAG}|" .env || printf 'API_GATEWAY_IMAGE_TAG=%s\n' "${API_GATEWAY_IMAGE_TAG}" >> .env
             docker compose -f docker-compose.stage.yml pull api-gateway
             docker compose -f docker-compose.stage.yml up -d --force-recreate api-gateway
             docker image prune -f || true
