@@ -293,6 +293,21 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 		return nil, fmt.Errorf("invalid target URL: %w", err)
 	}
 
+	// Пул keep-alive соединений к таргету. Если он меньше пиковой
+	// конкурентности, транспорт постоянно закрывает и переоткрывает
+	// соединения — CPU уходит в connect, RPS обваливается под нагрузкой.
+	cfg := mp.config.Load()
+	perHost := cfg.MaxIdleConnsPerHost
+	if perHost <= 0 {
+		perHost = 1000
+	}
+	// MaxIdleConns — суммарный лимит idle по всем таргетам; даём каждому
+	// таргету полный per-host бюджет.
+	totalIdle := perHost * len(cfg.Targets)
+	if totalIdle < perHost {
+		totalIdle = perHost
+	}
+
 	tp := &TargetProxy{
 		config:           targetCfg,
 		targetURL:        targetURL,
@@ -302,8 +317,8 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 		cbTimeout:        defaultCBTimeout,
 		timeout:          targetCfg.Timeout,
 		transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
+			MaxIdleConns:        totalIdle,
+			MaxIdleConnsPerHost: perHost,
 			IdleConnTimeout:     90 * time.Second,
 			DisableCompression:  false,
 		},

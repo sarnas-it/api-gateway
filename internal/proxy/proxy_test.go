@@ -356,3 +356,26 @@ func TestHealthCheckerStop_Idempotent(t *testing.T) {
 	var nilHC *HealthChecker
 	nilHC.Stop()
 }
+
+func TestCreateTargetProxy_UsesConfiguredConnPool(t *testing.T) {
+	cfg := &config.Config{
+		App: config.App{MaxIdleConnsPerHost: 250},
+		Targets: []config.TargetConfig{
+			{Name: "a", URL: "http://a:1"},
+			{Name: "b", URL: "http://b:1"},
+		},
+	}
+	mp := &MultiProxy{logger: zap.NewNop()}
+	mp.config.Store(cfg)
+
+	tp, err := mp.createTargetProxy(&cfg.Targets[0], false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tp.transport.MaxIdleConnsPerHost != 250 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 250", tp.transport.MaxIdleConnsPerHost)
+	}
+	if tp.transport.MaxIdleConns != 500 {
+		t.Errorf("MaxIdleConns = %d, want 500 (250 * 2 targets)", tp.transport.MaxIdleConns)
+	}
+}

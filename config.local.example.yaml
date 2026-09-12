@@ -7,6 +7,10 @@ server:
 application:
   env: "dev"
   health_check: false
+  # Размер пула keep-alive соединений к каждому таргету. Должен быть не меньше
+  # пиковой конкурентности к таргету, иначе под нагрузкой транспорт постоянно
+  # переоткрывает соединения и RPS падает. По умолчанию 1000.
+  max_idle_conns_per_host: 1000
   # metrics_enabled: true         # /metrics + active-requests счётчик; выкл. по умолчанию (доп. расходы на запрос)
   # metrics_allowed_ips: ["10.0.0.5"]
 

@@ -76,6 +76,11 @@ type App struct {
 	CircuitBreaker    bool     `yaml:"circuit_breaker"`
 	MetricsEnabled    bool     `yaml:"metrics_enabled"` // сбор метрик и /metrics эндпоинт; выкл. по умолчанию (доп. накладные расходы на запрос)
 	MetricsAllowedIPs []string `yaml:"metrics_allowed_ips"`
+	// MaxIdleConnsPerHost — размер пула keep-alive соединений к каждому таргету.
+	// Должен быть не меньше пиковой конкурентности к таргету, иначе транспорт
+	// постоянно переоткрывает соединения (CPU уходит в connect) и RPS падает
+	// под нагрузкой. 0 → дефолт (1000).
+	MaxIdleConnsPerHost int `yaml:"max_idle_conns_per_host"`
 }
 
 // ServerConfig конфигурация HTTP сервера
@@ -268,6 +273,9 @@ func Load(path string) (*Config, error) {
 
 // setDefaults устанавливает значения по умолчанию
 func (c *Config) setDefaults() {
+	if c.MaxIdleConnsPerHost <= 0 {
+		c.MaxIdleConnsPerHost = 1000
+	}
 	if c.Server.Port == 0 {
 		c.Server.Port = 8080
 	}

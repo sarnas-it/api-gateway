@@ -328,3 +328,37 @@ discovery:
 		t.Fatalf("podman provider must be accepted: %v", err)
 	}
 }
+
+func TestConfig_MaxIdleConnsPerHostDefault(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxIdleConnsPerHost != 1000 {
+		t.Errorf("default max_idle_conns_per_host = %d, want 1000", cfg.MaxIdleConnsPerHost)
+	}
+}
+
+func TestConfig_MaxIdleConnsPerHostOverride(t *testing.T) {
+	yaml := `
+application:
+  max_idle_conns_per_host: 250
+targets:
+  - name: "api"
+    url: "http://api:9001"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxIdleConnsPerHost != 250 {
+		t.Errorf("max_idle_conns_per_host = %d, want 250", cfg.MaxIdleConnsPerHost)
+	}
+}
