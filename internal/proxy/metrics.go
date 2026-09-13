@@ -31,6 +31,9 @@ func NewMetrics(enabled bool) *Metrics {
 	m.requestDuration = expvar.NewMap("gateway_request_duration_ms")
 	m.rateLimitDenials = expvar.NewInt("gateway_rate_limit_denials_total")
 	m.targetUp = expvar.NewMap("gateway_target_up")
+	// Регистрируем один раз: повторный expvar.NewInt с тем же именем паникует,
+	// а Handler() вызывается на каждый запрос /metrics.
+	expvar.NewInt("gateway_active_requests")
 	return m
 }
 
@@ -88,8 +91,6 @@ func (m *Metrics) DecActiveRequests() {
 }
 
 func (m *Metrics) Handler() http.Handler {
-	expvar.NewInt("gateway_active_requests").Set(0)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
