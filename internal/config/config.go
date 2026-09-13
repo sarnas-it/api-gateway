@@ -221,6 +221,12 @@ type WebhookConfig struct {
 	// Тело собирается только для JSON-ответов и ограничено по размеру.
 	// По умолчанию выключено — включение настраивается явно.
 	IncludeResponseBody bool `yaml:"include_response_body"`
+	// BatchSize включает батчинг HTTP-вебхуков: события копятся и уходят одним
+	// POST телом {"count":N,"events":[...]}. 0/1 — по одному событию (старый формат).
+	BatchSize int `yaml:"batch_size"`
+	// FlushInterval — максимальная задержка перед отправкой неполной пачки.
+	// По умолчанию 200ms (используется только при BatchSize > 1).
+	FlushInterval time.Duration `yaml:"flush_interval"`
 }
 
 // IncludeRequestBodyEnabled возвращает эффективное значение include_request_body
