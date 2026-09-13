@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,12 +38,21 @@ type Publisher struct {
 	nc       *nats.Conn
 	webhooks []config.WebhookConfig
 	log      *zap.Logger
+	client   *http.Client
 }
 
 func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
 	p := &Publisher{
 		log:      log,
 		webhooks: cfg.Webhooks,
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}
 
 	hasNATS := false
@@ -254,14 +264,25 @@ func (p *Publisher) publish(ctx context.Context, wh config.WebhookConfig, event 
 }
 
 func (p *Publisher) doWebhook(ctx context.Context, wh config.WebhookConfig, data []byte) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.WebhookURL, nil)
+	// Вебхук не должен зависеть от времени жизни запроса: on_response срабатывает
+	// после ответа, а async — после возврата хендлера, когда request-context уже
+	// отменён. Отвязываем контекст (WithoutCancel) и ограничиваем отправку своим
+	// таймаутом, иначе POST отменяется и событие не доставляется.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.WebhookURL, bytes.NewReader(data))
 	if err != nil {
 		p.log.Error("failed to create webhook request", zap.Error(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := p.client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		p.log.Error("failed to send webhook", zap.Error(err), zap.String("url", wh.WebhookURL))
 		return
