@@ -175,3 +175,16 @@ discovery:
   # Аварийный фолбэк: последний удачный результат discovery (маршруты переживают
   # рестарт при недоступном Docker/Podman). "" отключает персист.
   state_file: /var/lib/api-gateway/discovery-state.json
+
+# Вебхуки/NATS: публикация событий on_request/on_response.
+# Для объёмного аудита (событие на каждый запрос) включайте батчинг: события
+# копятся и уходят одним POST телом {"count":N,"events":[...]}, очередь
+# ограничена, при переполнении постановка блокируется (потерь нет).
+# webhooks:
+#   - name: "audit"
+#     transport: "webhook"          # webhook | nats
+#     webhook_url: "https://audit.example/events"
+#     trigger: "on_response"
+#     methods: ["POST", "PUT", "PATCH", "DELETE"]
+#     batch_size: 1000              # >1 включает батчинг (0/1 — по одному событию)
+#     flush_interval: 100ms         # максимальная задержка перед отправкой пачки

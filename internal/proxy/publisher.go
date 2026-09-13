@@ -39,12 +39,14 @@ type Publisher struct {
 	webhooks []config.WebhookConfig
 	log      *zap.Logger
 	client   *http.Client
+	batchers map[string]*webhookBatcher
 }
 
 func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
 	p := &Publisher{
 		log:      log,
 		webhooks: cfg.Webhooks,
+		batchers: make(map[string]*webhookBatcher),
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
@@ -53,6 +55,18 @@ func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
+	}
+
+	// Батчинг HTTP-вебхуков: события копятся и уходят одним POST.
+	for _, wh := range cfg.Webhooks {
+		if wh.Transport == config.TransportWebhook && wh.BatchSize > 1 {
+			p.batchers[wh.Name] = newWebhookBatcher(wh, p.client, log)
+			log.Info("webhook batching enabled",
+				zap.String("webhook", wh.Name),
+				zap.Int("batch_size", wh.BatchSize),
+				zap.Duration("flush_interval", wh.FlushInterval),
+			)
+		}
 	}
 
 	hasNATS := false
@@ -90,6 +104,9 @@ func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
 }
 
 func (p *Publisher) Close() {
+	for _, b := range p.batchers {
+		b.close()
+	}
 	if p.nc != nil {
 		p.nc.Close()
 		p.log.Info("NATS connection closed")
@@ -225,6 +242,12 @@ func (p *Publisher) PublishOnResponse(ctx context.Context, r *http.Request, stat
 }
 
 func (p *Publisher) publish(ctx context.Context, wh config.WebhookConfig, event AuditEvent) {
+	// Батчинг: событие уходит в очередь вебхука, отправку пачкой делает воркер.
+	if b := p.batchers[wh.Name]; b != nil {
+		b.enqueue(event)
+		return
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		p.log.Error("failed to marshal audit event", zap.Error(err))
