@@ -12,7 +12,7 @@ DASHBOARD_REFRESH         ?= 5s
 GO       ?= go
 GOLANGCI ?= golangci-lint
 
-.PHONY: all build run check test lint coverage clean docker-build fmt vet dashboard dashboard-run plugin-build plugin-so-build
+.PHONY: all build run check test lint coverage clean docker-build fmt vet dashboard dashboard-run plugin-build plugin-so-build gen-proto
 
 all: fmt vet lint build test
 

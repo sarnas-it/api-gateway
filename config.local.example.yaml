@@ -177,6 +177,24 @@ discovery:
   # рестарт при недоступном Docker/Podman). "" отключает персист.
   state_file: /var/lib/api-gateway/discovery-state.json
 
+# Плагины (pluginrpc): вынос встроенных фич в отдельные артефакты/процессы.
+# При enabled: true фича берётся из плагина (path + transport), а не из
+# встроенной реализации. transport: so | shared | fast | grpc.
+# plugins:
+#   enabled: false
+#   jwt:
+#     path: "bin/plugins/jwt"
+#     transport: "shared"
+#   ratelimit:
+#     path: "bin/plugins/ratelimit"
+#     transport: "shared"
+#   webhooks:
+#     path: "bin/plugins/events"
+#     transport: "fast"
+#   discovery:
+#     path: "bin/plugins/discovery"
+#     transport: "fast"
+
 # Вебхуки/NATS: публикация событий on_request/on_response.
 # Для объёмного аудита (событие на каждый запрос) включайте батчинг: события
 # копятся и уходят одним POST телом {"count":N,"events":[...]}, очередь

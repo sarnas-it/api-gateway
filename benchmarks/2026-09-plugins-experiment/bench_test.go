@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,6 +82,7 @@ func BenchmarkGateway(b *testing.B) {
 	}
 
 	b.ResetTimer()
+	var mu sync.Mutex
 	var lat []time.Duration
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -91,7 +93,9 @@ func BenchmarkGateway(b *testing.B) {
 			rec := httptest.NewRecorder()
 			start := time.Now()
 			mp.ServeHTTP(rec, r)
+			mu.Lock()
 			lat = append(lat, time.Since(start))
+			mu.Unlock()
 			if rec.Code != http.StatusOK {
 				b.Fatalf("unexpected status %d", rec.Code)
 			}
