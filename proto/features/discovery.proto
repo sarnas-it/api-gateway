@@ -1,0 +1,31 @@
+syntax = "proto3";
+package features.discovery.v1;
+option go_package = "github.com/basili4-1982/api-gateway/internal/features/discoveryv1";
+
+message Target {
+  string name = 1;
+  string url = 2;
+  string path_prefix = 3;
+  bool strip_prefix = 4;
+  int32 weight = 5;
+  string health_check = 6;
+}
+
+message Rule {
+  string host = 1;
+  string path_prefix = 2;
+  string target_name = 3;
+  repeated string methods = 4;
+  bool strip_path = 5;
+}
+
+message DiscoveryResult {
+  repeated Target targets = 1;
+  repeated Rule rules = 2;
+}
+
+message WatchRequest {}
+
+service DiscoveryService {
+  rpc Watch(WatchRequest) returns (stream DiscoveryResult);
+}

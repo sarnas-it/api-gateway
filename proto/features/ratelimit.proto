@@ -1,0 +1,18 @@
+syntax = "proto3";
+package features.ratelimit.v1;
+option go_package = "github.com/basili4-1982/api-gateway/internal/features/ratelimitv1";
+
+message AllowRequest {
+  string route_key = 1;   // config.RuleRouteKey(rule)
+  string ip = 2;          // clientIP из getClientIP
+  double rate = 3;        // rule.RateLimit.RequestsPerSecond
+  int64 burst = 4;        // rule.RateLimit.Burst
+}
+
+message AllowResponse {
+  bool allowed = 1;
+}
+
+service RateLimitService {
+  rpc Allow(AllowRequest) returns (AllowResponse);
+}

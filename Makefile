@@ -70,3 +70,9 @@ install-hooks:
 	cp .githooks/pre-push .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 	@echo "✅ Pre-push hook installed"
+
+gen-proto:
+	protoc -I proto/features --go_out=. --go_opt=module=github.com/basili4-1982/api-gateway \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/basili4-1982/api-gateway \
+		proto/features/authsvc.proto proto/features/ratelimit.proto \
+		proto/features/events.proto proto/features/discovery.proto

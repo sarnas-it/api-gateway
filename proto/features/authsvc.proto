@@ -1,0 +1,21 @@
+syntax = "proto3";
+package features.auth.v1;
+option go_package = "github.com/basili4-1982/api-gateway/internal/features/authv1";
+
+message ValidateRequest {
+  string token = 1;                 // значение заголовка Authorization целиком
+  bool required = 2;                // эффективный jwt.required (с учётом rule.Auth.Required)
+  repeated string any_roles = 3;    // rule.Auth.Roles
+  repeated string all_roles = 4;    // rule.Auth.RolesAll
+}
+
+message ValidateResponse {
+  bool ok = 1;                      // можно продолжать обработку (401 если false)
+  string error = 2;                 // сообщение для 401
+  bool has_claims = 3;              // токен валиден и claims извлечены
+  map<string, string> claims = 4;   // результат ExtractClaims(claimMappings): claim → string
+}
+
+service AuthService {
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+}
