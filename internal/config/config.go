@@ -27,6 +27,22 @@ type Config struct {
 	Permissions PermissionsConfig `yaml:"permissions"`
 	Webhooks    []WebhookConfig   `yaml:"webhooks"`
 	Discovery   *DiscoveryConfig  `yaml:"discovery,omitempty"`
+	Plugins     PluginsConfig     `yaml:"plugins"`
+}
+
+// PluginsConfig конфигурация подключения фич как pluginrpc-плагинов.
+type PluginsConfig struct {
+	Enabled   bool        `yaml:"enabled"`
+	JWT       *PluginSpec `yaml:"jwt,omitempty"`
+	RateLimit *PluginSpec `yaml:"ratelimit,omitempty"`
+	Webhooks  *PluginSpec `yaml:"webhooks,omitempty"`
+	Discovery *PluginSpec `yaml:"discovery,omitempty"`
+}
+
+// PluginSpec описывает один плагин: путь к артефакту и транспорт.
+type PluginSpec struct {
+	Path      string `yaml:"path"`
+	Transport string `yaml:"transport"` // so | shared | fast | grpc
 }
 
 // DiscoveryConfig конфигурация service discovery (Docker/Podman по labels).
@@ -638,6 +654,16 @@ func validHTTPMethodToken(m string) bool {
 
 // validate проверяет корректность конфигурации
 func (c *Config) validate() error {
+	if c.Plugins.Enabled {
+		for name, spec := range map[string]*PluginSpec{
+			"jwt": c.Plugins.JWT, "ratelimit": c.Plugins.RateLimit,
+			"webhooks": c.Plugins.Webhooks, "discovery": c.Plugins.Discovery,
+		} {
+			if spec != nil && spec.Path == "" {
+				return fmt.Errorf("plugins.%s.path is required", name)
+			}
+		}
+	}
 	discoveryEnabled := c.Discovery != nil && c.Discovery.Enabled
 	if discoveryEnabled {
 		switch c.Discovery.Provider {

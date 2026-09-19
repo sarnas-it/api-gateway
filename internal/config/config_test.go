@@ -615,6 +615,29 @@ targets:
 	}
 }
 
+func minimalConfig() Config {
+	return Config{
+		Targets: []TargetConfig{{Name: "api", URL: "http://api:9001"}},
+	}
+}
+
+func TestPluginsValidation(t *testing.T) {
+	t.Run("spec without path fails", func(t *testing.T) {
+		cfg := minimalConfig()
+		cfg.Plugins = PluginsConfig{Enabled: true, JWT: &PluginSpec{Transport: "so"}}
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("expected error for empty plugin path")
+		}
+	})
+	t.Run("disabled plugins skip validation", func(t *testing.T) {
+		cfg := minimalConfig()
+		cfg.Plugins = PluginsConfig{Enabled: false, JWT: &PluginSpec{Transport: "so"}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func hasWarning(warnings []string, want string) bool {
 	for _, w := range warnings {
 		if w == want {
