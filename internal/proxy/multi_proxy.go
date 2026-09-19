@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,8 +23,10 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/basili4-1982/api-gateway/internal/config"
+	"github.com/basili4-1982/api-gateway/internal/features/authv1"
 	"github.com/basili4-1982/api-gateway/internal/jwtutil"
 	"github.com/basili4-1982/api-gateway/internal/permissions"
+	"github.com/basili4-1982/api-gateway/internal/plugins"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -160,6 +164,8 @@ type MultiProxy struct {
 	tracerProvider     *TracerProvider
 	permissionsManager *permissions.Manager
 	publisher          *Publisher
+	plugins            *plugins.Backend
+	pluginCancel       context.CancelFunc
 }
 
 // HealthChecker проверяет здоровье таргета
@@ -179,8 +185,24 @@ func (hc *HealthChecker) Stop() {
 	hc.stopOnce.Do(func() { close(hc.stopCh) })
 }
 
-// NewMultiProxy создает новый мульти-прокси сервер
+// NewMultiProxy создает новый мульти-прокси сервер. Стартует plugin-бэкенд
+// (context.Background), если в конфиге включены плагины.
 func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) {
+	return NewMultiProxyWithPlugins(context.Background(), cfg, logger)
+}
+
+// NewMultiProxyWithPlugins — вариант NewMultiProxy с внешним ctx для pluginrpc.
+func NewMultiProxyWithPlugins(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) {
+	backend, err := plugins.Start(ctx, cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("start plugins: %w", err)
+	}
+	return newMultiProxy(cfg, logger, backend)
+}
+
+// newMultiProxy — исходное тело NewMultiProxy; backend передаётся до построения
+// хендлера (нужен rebuildRouteConfigs и publisher'у).
+func newMultiProxy(cfg *config.Config, logger *zap.Logger, backend *plugins.Backend) (*MultiProxy, error) {
 	jwtValidator, err := jwtutil.NewJWTValidator(
 		cfg.JWT.SecretKey,
 		cfg.JWT.Algorithm,
@@ -202,6 +224,8 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 		logger:       logger,
 		metrics:      NewMetrics(cfg.MetricsEnabled),
 	}
+	mp.plugins = backend
+	mp.pluginCancel = func() {}
 	mp.config.Store(cfg)
 	mp.initGlobalLimiter(cfg)
 	mp.tracerProvider, _ = NewTracerProvider("api-gateway", logger)
@@ -259,6 +283,11 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 	mp.handler = handler
 
 	return mp, nil
+}
+
+// Plugins возвращает запущенный plugin-бэкенд (nil, если плагины выключены).
+func (mp *MultiProxy) Plugins() *plugins.Backend {
+	return mp.plugins
 }
 
 // setCORSHeaders устанавливает CORS заголовки
@@ -493,6 +522,10 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 
 // modifyRequest модифицирует запрос перед отправкой
 func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetConfig, rule *config.RoutingRule) error {
+	if mp.plugins != nil && mp.plugins.Auth != nil {
+		return mp.modifyRequestViaPlugin(r, targetCfg, rule)
+	}
+
 	authHeader := r.Header.Get("Authorization")
 
 	// если нет Authorization header — пробуем JWT из cookie
@@ -592,6 +625,90 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
 	}
 
+	return nil
+}
+
+// modifyRequestViaPlugin — копия логики modifyRequest, где блок JWT заменён
+// на вызов плагина. Дублирование намеренное: builtin-путь (modifyRequest)
+// должен остаться байт-в-байт неизменным для бенчмарка.
+func (mp *MultiProxy) modifyRequestViaPlugin(r *http.Request, targetCfg *config.TargetConfig, rule *config.RoutingRule) error {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		if c, err := r.Cookie("cml_access"); err == nil && c.Value != "" {
+			authHeader = "Bearer " + c.Value
+			r.Header.Set("Authorization", authHeader)
+		}
+	}
+
+	cfg := mp.config.Load()
+	authRequired := cfg.JWT.Required
+	stripToken := cfg.Headers.StripAuthorization
+	var anyRoles, allRoles []string
+	if rule != nil && rule.Auth != nil {
+		authRequired = rule.Auth.Required
+		if rule.Auth.StripToken != nil {
+			stripToken = *rule.Auth.StripToken
+		}
+		anyRoles, allRoles = rule.Auth.Roles, rule.Auth.RolesAll
+	}
+
+	if authHeader == "" && authRequired {
+		return fmt.Errorf("missing authorization token")
+	}
+
+	if authHeader != "" {
+		resp, err := mp.plugins.Auth.Validate(r.Context(), &authv1.ValidateRequest{
+			Token: authHeader, Required: authRequired, AnyRoles: anyRoles, AllRoles: allRoles,
+		})
+		if err != nil {
+			return fmt.Errorf("auth plugin error: %w", err)
+		}
+		if !resp.Ok {
+			if resp.Error != "" {
+				return errors.New(resp.Error)
+			}
+			return fmt.Errorf("authentication failed")
+		}
+		if resp.HasClaims {
+			for claimName, headerName := range cfg.Headers.ClaimToHeader {
+				if val, ok := resp.Claims[claimName]; ok {
+					r.Header.Set(headerName, val)
+				}
+			}
+			signHeader := cfg.Headers.SignHeader
+			if signHeader != "" {
+				if userIDStr, ok := resp.Claims["id"]; ok && userIDStr != "" {
+					secret := cfg.Permissions.APIKey
+					if secret != "" {
+						mac := hmac.New(sha256.New, []byte(secret))
+						mac.Write([]byte(userIDStr))
+						sig := hex.EncodeToString(mac.Sum(nil))
+						r.Header.Set(signHeader, sig)
+					}
+				}
+			}
+			if mp.permissionsManager != nil {
+				if userIDStr, ok := resp.Claims["id"]; ok {
+					if userID, err := strconv.Atoi(userIDStr); err == nil {
+						if err := mp.permissionsManager.SetHeader(r, userID); err != nil {
+							mp.logger.Warn("failed to set permissions header",
+								zap.Int("user_id", userID), zap.Error(err))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for header, value := range cfg.Headers.AddHeaders {
+		r.Header.Set(header, value)
+	}
+	if stripToken {
+		r.Header.Del("Authorization")
+	}
+	if clientIP := r.Header.Get("X-Forwarded-For"); clientIP == "" {
+		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
+	}
 	return nil
 }
 
@@ -986,6 +1103,13 @@ func (mp *MultiProxy) Stop(ctx context.Context) error {
 
 	if mp.publisher != nil {
 		mp.publisher.Close()
+	}
+
+	if mp.pluginCancel != nil {
+		mp.pluginCancel()
+	}
+	if mp.plugins != nil {
+		mp.plugins.Stop(ctx)
 	}
 
 	return nil
