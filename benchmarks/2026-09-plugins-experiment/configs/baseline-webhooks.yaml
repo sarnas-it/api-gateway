@@ -14,6 +14,10 @@ webhooks:
     async: true
     batch_size: 20
     flush_interval: 200ms
+# Gateway core always builds a JWT validator, so an (unused) secret is required.
+jwt:
+  required: false
+  secret_key: "benchsecret"
 targets:
   - name: "backend"
     url: "http://127.0.0.1:19901"
