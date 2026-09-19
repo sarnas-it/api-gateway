@@ -65,6 +65,12 @@ func NewManager(cfg *config.Config, log *zap.Logger, onUpdate func(*config.Confi
 	return m, nil
 }
 
+// SetProvider заменяет провайдера discovery (например, на plugin-провайдер).
+// Вызывать до Start.
+func (m *Manager) SetProvider(p Provider) {
+	m.setProvider(p)
+}
+
 // setProvider подменяет провайдер (для тестов).
 func (m *Manager) setProvider(p Provider) {
 	m.mu.Lock()

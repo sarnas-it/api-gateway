@@ -39,6 +39,12 @@ type dockerProvider struct {
 // dockerProvider реализует Provider.
 var _ Provider = (*dockerProvider)(nil)
 
+// NewDockerProvider создаёт Docker-провайдер. Обёртка над newDockerProvider,
+// экспортированная для использования плагинами discovery.
+func NewDockerProvider(host, apiVersion string, opts ParseOptions, debounce, resync time.Duration, log *zap.Logger) (Provider, error) {
+	return newDockerProvider(host, apiVersion, opts, debounce, resync, log)
+}
+
 func newDockerProvider(host, apiVersion string, opts ParseOptions, debounce, resync time.Duration, log *zap.Logger) (*dockerProvider, error) {
 	client, err := newDockerClient(host, apiVersion)
 	if err != nil {
