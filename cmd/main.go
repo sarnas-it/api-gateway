@@ -74,12 +74,26 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mgr, err := discovery.NewManager(cfg, log, func(updated *config.Config) error {
-		return p.Reload(updated)
-	})
-	if err != nil {
-		log.Error("Failed to create discovery manager", zap.Error(err))
-		os.Exit(1)
+	var mgr *discovery.Manager
+	if be := p.Plugins(); be != nil && be.Discovery != nil {
+		noDisc := *cfg
+		noDisc.Discovery = nil // менеджер не строит встроенный docker-провайдер
+		mgr, err = discovery.NewManager(&noDisc, log, func(updated *config.Config) error {
+			return p.Reload(updated)
+		})
+		if err != nil {
+			log.Error("Failed to create discovery manager", zap.Error(err))
+			os.Exit(1)
+		}
+		mgr.SetProvider(discovery.NewPluginProvider(be.Discovery))
+	} else {
+		mgr, err = discovery.NewManager(cfg, log, func(updated *config.Config) error {
+			return p.Reload(updated)
+		})
+		if err != nil {
+			log.Error("Failed to create discovery manager", zap.Error(err))
+			os.Exit(1)
+		}
 	}
 
 	sigCh := make(chan os.Signal, 1)
