@@ -12,12 +12,21 @@ DASHBOARD_REFRESH         ?= 5s
 GO       ?= go
 GOLANGCI ?= golangci-lint
 
-.PHONY: all build run check test lint coverage clean docker-build fmt vet dashboard dashboard-run
+.PHONY: all build run check test lint coverage clean docker-build fmt vet dashboard dashboard-run plugin-build plugin-so-build
 
 all: fmt vet lint build test
 
 build:
 	$(GO) build -ldflags="-w -s" -trimpath -o $(BIN_DIR)/$(BINARY) ./cmd/
+
+plugin-build:
+	$(GO) build -o $(BIN_DIR)/plugins/jwt ./cmd/plugins/jwt/
+	$(GO) build -o $(BIN_DIR)/plugins/ratelimit ./cmd/plugins/ratelimit/
+	$(GO) build -o $(BIN_DIR)/plugins/events ./cmd/plugins/events/
+	$(GO) build -o $(BIN_DIR)/plugins/discovery ./cmd/plugins/discovery/
+
+plugin-so-build:
+	$(GO) build -buildmode=plugin -trimpath -tags pluginmain -o $(BIN_DIR)/plugins/jwt.so ./cmd/plugins/jwt/
 
 run: build
 	./$(BIN_DIR)/$(BINARY) -config $(CONFIG)
