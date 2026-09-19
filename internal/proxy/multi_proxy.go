@@ -32,7 +32,7 @@ import (
 
 type RouteConfig struct {
 	Rule      *config.RoutingRule
-	RateLimit *IPRateLimiter
+	RateLimit RateLimiter
 
 	// Targets — пул кандидатов одного route: все таргеты правил, совпадающих
 	// по (host, path_prefix, methods). weights[i] — вес Targets[i],
@@ -1055,7 +1055,11 @@ func (mp *MultiProxy) rebuildRouteConfigs(cfg *config.Config) {
 		if rc == nil {
 			rc = &RouteConfig{Rule: rule}
 			if rule.RateLimit != nil {
-				rc.RateLimit = NewIPRateLimiter(rule.RateLimit.RequestsPerSecond, rule.RateLimit.Burst)
+				if mp.plugins != nil && mp.plugins.RateLimit != nil {
+					rc.RateLimit = newPluginRateLimiter(mp.plugins.RateLimit, key, rule.RateLimit.RequestsPerSecond, rule.RateLimit.Burst)
+				} else {
+					rc.RateLimit = NewIPRateLimiter(rule.RateLimit.RequestsPerSecond, rule.RateLimit.Burst)
+				}
 			}
 			groups[key] = rc
 			routeConfigs = append(routeConfigs, rc)
