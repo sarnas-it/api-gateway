@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -16,17 +17,41 @@ import (
 )
 
 // BenchmarkGateway гоняет реальный MultiProxy с конфигом из GATEWAY_BENCH_CONFIG.
-// Запуск:
+// Запуск из корня репозитория:
 //
-//	GATEWAY_BENCH_CONFIG=configs/baseline-jwt.yaml go test -bench BenchmarkGateway -benchmem -count=5 ./benchmarks/2026-09-plugins-experiment/
+//	GATEWAY_BENCH_CONFIG=benchmarks/2026-09-plugins-experiment/configs/baseline-jwt.yaml go test -run '^$' -bench BenchmarkGateway -benchmem -count=5 -benchtime=2s ./benchmarks/2026-09-plugins-experiment/
+//
+// Для .so-сценариев (jwt.so) тестовый бинарник нужно собирать с -trimpath (иначе хеш пакета
+// не совпадёт с собранным .so):
+//
+//	go test -trimpath -run '^$' -bench BenchmarkGateway ...
 func BenchmarkGateway(b *testing.B) {
+	// bench_test.go лежит двумя уровнями ниже корня репозитория; go test запускает
+	// бинарник с cwd = каталог пакета, поэтому пути из конфигов (bin/plugins/...)
+	// и repo-root-относительный GATEWAY_BENCH_CONFIG разрешаем от корня.
+	repoRoot, _ := filepath.Abs("../..")
+
 	path := os.Getenv("GATEWAY_BENCH_CONFIG")
 	if path == "" {
 		b.Skip("GATEWAY_BENCH_CONFIG not set")
 	}
+	if !filepath.IsAbs(path) {
+		rootPath := filepath.Join(repoRoot, path)
+		if _, err := os.Stat(rootPath); err == nil {
+			path = rootPath
+		}
+	}
 	cfg, _, err := config.Load(path)
 	if err != nil {
 		b.Fatalf("load config: %v", err)
+	}
+
+	for _, spec := range []*config.PluginSpec{
+		cfg.Plugins.JWT, cfg.Plugins.RateLimit, cfg.Plugins.Webhooks, cfg.Plugins.Discovery,
+	} {
+		if spec != nil && spec.Path != "" && !filepath.IsAbs(spec.Path) {
+			spec.Path = filepath.Join(repoRoot, spec.Path)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
