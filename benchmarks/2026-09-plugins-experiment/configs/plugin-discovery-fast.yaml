@@ -1,5 +1,6 @@
 # Plugin perf experiment: Docker service discovery served by the discovery plugin over
-# the fast transport. Static targets/rules are empty; routes come only from Docker labels.
+# the fast transport. A static target/route keeps proxying working while discovery runs
+# as control plane; routes may additionally come from Docker labels.
 server:
   port: 18080
 application:
@@ -12,9 +13,14 @@ plugins:
   discovery:
     path: bin/plugins/discovery
     transport: fast
-targets: []
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
 routing:
-  rules: []
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
 discovery:
   enabled: true
   provider: docker

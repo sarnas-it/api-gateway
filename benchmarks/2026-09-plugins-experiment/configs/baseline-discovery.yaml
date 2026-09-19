@@ -1,5 +1,6 @@
-# Plugin perf experiment baseline: in-process Docker service discovery. Static
-# targets/rules are empty; routes come only from Docker labels.
+# Plugin perf experiment baseline: in-process Docker service discovery. A static
+# target/route keeps proxying working while discovery runs as control plane;
+# routes may additionally come from Docker labels.
 server:
   port: 18080
 application:
@@ -7,9 +8,14 @@ application:
   health_check: false
   circuit_breaker: false
   metrics_enabled: false
-targets: []
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
 routing:
-  rules: []
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
 discovery:
   enabled: true
   provider: docker
