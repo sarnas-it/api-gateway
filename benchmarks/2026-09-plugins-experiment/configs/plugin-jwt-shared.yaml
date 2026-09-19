@@ -1,0 +1,29 @@
+# Plugin perf experiment: JWT validated by the jwt plugin over the shared transport.
+server:
+  port: 18080
+application:
+  env: "prod"
+  health_check: false
+  circuit_breaker: false
+  metrics_enabled: false
+plugins:
+  enabled: true
+  jwt:
+    path: bin/plugins/jwt
+    transport: shared
+jwt:
+  required: true
+  secret_key: "benchsecret"
+  algorithm: "HS256"
+  validate_exp: true
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
+logging:
+  level: "error"
+  access_log: false

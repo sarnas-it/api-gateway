@@ -1,0 +1,33 @@
+# Plugin perf experiment: batched HTTP webhook delivered by the events plugin over the
+# fast transport (sink on :19902).
+server:
+  port: 18080
+application:
+  env: "prod"
+  health_check: false
+  circuit_breaker: false
+  metrics_enabled: false
+plugins:
+  enabled: true
+  webhooks:
+    path: bin/plugins/events
+    transport: fast
+webhooks:
+  - name: "h"
+    transport: "webhook"
+    webhook_url: "http://127.0.0.1:19902/"
+    trigger: "on_response"
+    async: true
+    batch_size: 20
+    flush_interval: 200ms
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
+logging:
+  level: "error"
+  access_log: false

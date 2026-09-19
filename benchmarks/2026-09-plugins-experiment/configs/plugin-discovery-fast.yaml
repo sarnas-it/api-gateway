@@ -1,0 +1,27 @@
+# Plugin perf experiment: Docker service discovery served by the discovery plugin over
+# the fast transport. Static targets/rules are empty; routes come only from Docker labels.
+server:
+  port: 18080
+application:
+  env: "prod"
+  health_check: false
+  circuit_breaker: false
+  metrics_enabled: false
+plugins:
+  enabled: true
+  discovery:
+    path: bin/plugins/discovery
+    transport: fast
+targets: []
+routing:
+  rules: []
+discovery:
+  enabled: true
+  provider: docker
+  host: "unix:///var/run/docker.sock"
+  label_prefix: "gateway"
+  debounce: 1s
+  resync_interval: 1m
+logging:
+  level: "error"
+  access_log: false

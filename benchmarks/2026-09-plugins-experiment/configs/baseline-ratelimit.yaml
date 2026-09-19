@@ -1,0 +1,23 @@
+# Plugin perf experiment baseline: in-process route rate-limit, effectively unlimited
+# (100000 rps/burst) so the limiter path runs on every request without throttling.
+server:
+  port: 18080
+application:
+  env: "prod"
+  health_check: false
+  circuit_breaker: false
+  metrics_enabled: false
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
+      rate_limit:
+        requests_per_second: 100000
+        burst: 100000
+logging:
+  level: "error"
+  access_log: false

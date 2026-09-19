@@ -1,0 +1,28 @@
+# Plugin perf experiment: route rate-limit served by the ratelimit plugin over the
+# shared transport. The token bucket is effectively unlimited (never trips).
+server:
+  port: 18080
+application:
+  env: "prod"
+  health_check: false
+  circuit_breaker: false
+  metrics_enabled: false
+plugins:
+  enabled: true
+  ratelimit:
+    path: bin/plugins/ratelimit
+    transport: shared
+targets:
+  - name: "backend"
+    url: "http://127.0.0.1:19901"
+    timeout: 30s
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "backend"
+      rate_limit:
+        requests_per_second: 100000
+        burst: 100000
+logging:
+  level: "error"
+  access_log: false
