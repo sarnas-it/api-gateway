@@ -180,6 +180,66 @@ func (v *JWTValidator) ValidateClaims(claims jwt.MapClaims) error {
 	return nil
 }
 
+// CheckRoles проверяет роли из claims по схеме (any of anyOf) AND (all of allOf).
+// Пустые оба списка — проверка не нужна. Отсутствующий/нестроковый/не-массивный
+// claim или массив с нестроковыми элементами — ошибка (fail closed).
+func CheckRoles(claims jwt.MapClaims, anyOf, allOf []string) error {
+	if len(anyOf) == 0 && len(allOf) == 0 {
+		return nil
+	}
+	roleSet, err := extractRoles(claims)
+	if err != nil {
+		return err
+	}
+	if len(anyOf) > 0 {
+		found := false
+		for _, required := range anyOf {
+			if roleSet[required] {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("missing any required role: %s", strings.Join(anyOf, ", "))
+		}
+	}
+	for _, required := range allOf {
+		if !roleSet[required] {
+			return fmt.Errorf("missing required role: %s", required)
+		}
+	}
+	return nil
+}
+
+func extractRoles(claims jwt.MapClaims) (map[string]bool, error) {
+	raw, ok := claims["roles"]
+	if !ok {
+		return nil, fmt.Errorf("missing roles claim")
+	}
+	switch v := raw.(type) {
+	case string:
+		return map[string]bool{v: true}, nil
+	case []string:
+		set := make(map[string]bool, len(v))
+		for _, role := range v {
+			set[role] = true
+		}
+		return set, nil
+	case []interface{}:
+		set := make(map[string]bool, len(v))
+		for _, item := range v {
+			role, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid roles claim: non-string element %T", item)
+			}
+			set[role] = true
+		}
+		return set, nil
+	default:
+		return nil, fmt.Errorf("invalid roles claim format: %T", raw)
+	}
+}
+
 // ExtractClaims извлекает значения из claims
 func ExtractClaims(claims jwt.MapClaims, mappings []string) map[string]interface{} {
 	result := make(map[string]interface{})

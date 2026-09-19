@@ -149,3 +149,26 @@ func TestWithoutExpValidation(t *testing.T) {
 		t.Fatalf("expected no exp validation, got %v", err)
 	}
 }
+
+func TestCheckRoles(t *testing.T) {
+	claims := jwt.MapClaims{"roles": []interface{}{"admin", "user"}}
+	if err := CheckRoles(claims, []string{"user"}, nil); err != nil {
+		t.Fatalf("any-of should pass: %v", err)
+	}
+	if err := CheckRoles(claims, nil, []string{"admin"}); err != nil {
+		t.Fatalf("all-of should pass: %v", err)
+	}
+	if err := CheckRoles(claims, []string{"nobody"}, nil); err == nil {
+		t.Fatal("any-of should fail")
+	}
+	if err := CheckRoles(claims, nil, []string{"admin", "root"}); err == nil {
+		t.Fatal("all-of should fail")
+	}
+}
+
+func TestCheckRolesStringRole(t *testing.T) {
+	claims := jwt.MapClaims{"roles": "admin"}
+	if err := CheckRoles(claims, []string{"admin"}, nil); err != nil {
+		t.Fatalf("string role should pass: %v", err)
+	}
+}
