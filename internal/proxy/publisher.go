@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/basili4-1982/api-gateway/internal/config"
+	"github.com/basili4-1982/api-gateway/internal/features/eventsv1"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/zap"
 )
@@ -35,11 +36,12 @@ type AuditEvent struct {
 const defaultMaxResponseBodyBytes = 64 << 10 // 64 KiB
 
 type Publisher struct {
-	nc       *nats.Conn
-	webhooks []config.WebhookConfig
-	log      *zap.Logger
-	client   *http.Client
-	batchers map[string]*webhookBatcher
+	nc           *nats.Conn
+	webhooks     []config.WebhookConfig
+	log          *zap.Logger
+	client       *http.Client
+	batchers     map[string]*webhookBatcher
+	eventsClient eventsv1.EventServiceClient
 }
 
 func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
@@ -241,7 +243,44 @@ func (p *Publisher) PublishOnResponse(ctx context.Context, r *http.Request, stat
 	}
 }
 
+func (p *Publisher) setEventsClient(c eventsv1.EventServiceClient) {
+	p.eventsClient = c
+}
+
+// Deliver отправляет уже построенное событие конкретному вебхуку по имени.
+// Используется плагинами, у которых свой Publisher (доставка: батчинг/NATS/HTTP).
+func (p *Publisher) Deliver(ctx context.Context, webhookName string, event AuditEvent) {
+	for _, wh := range p.webhooks {
+		if wh.Name == webhookName {
+			p.publish(ctx, wh, event)
+			return
+		}
+	}
+}
+
+func toProtoEvent(e AuditEvent) *eventsv1.AuditEvent {
+	return &eventsv1.AuditEvent{
+		Method: e.Method, Path: e.Path, Query: e.Query,
+		UserId: e.UserID, UserEmail: e.UserEmail, UserRoles: e.UserRoles,
+		RequestId: e.RequestID, StatusCode: int32(e.StatusCode),
+		TimestampNanos: e.Timestamp.UnixNano(),
+		Headers:        e.Headers,
+		Changes:        e.Changes,
+		ResponseBody:   e.ResponseBody,
+	}
+}
+
 func (p *Publisher) publish(ctx context.Context, wh config.WebhookConfig, event AuditEvent) {
+	if p.eventsClient != nil {
+		if _, err := p.eventsClient.Publish(ctx, &eventsv1.PublishRequest{
+			WebhookName: wh.Name,
+			Event:       toProtoEvent(event),
+		}); err != nil {
+			p.log.Error("failed to publish event via plugin", zap.Error(err), zap.String("webhook", wh.Name))
+		}
+		return
+	}
+
 	// Батчинг: событие уходит в очередь вебхука, отправку пачкой делает воркер.
 	if b := p.batchers[wh.Name]; b != nil {
 		b.enqueue(event)

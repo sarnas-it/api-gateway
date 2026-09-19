@@ -278,6 +278,10 @@ func newMultiProxy(cfg *config.Config, logger *zap.Logger, backend *plugins.Back
 		logger.Info("Webhook publisher enabled",
 			zap.Int("webhooks", len(cfg.Webhooks)),
 		)
+		if mp.plugins != nil && mp.plugins.Events != nil {
+			publisher.setEventsClient(mp.plugins.Events)
+			logger.Info("Webhook delivery delegated to plugin")
+		}
 	}
 
 	mp.handler = handler
