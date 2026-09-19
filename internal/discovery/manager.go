@@ -65,6 +65,25 @@ func NewManager(cfg *config.Config, log *zap.Logger, onUpdate func(*config.Confi
 	return m, nil
 }
 
+// NewManagerWithProvider создаёт менеджер discovery с внешним провайдером
+// (например, plugin-провайдером) вместо встроенного docker-провайдера. В
+// отличие от NewManager+SetProvider, он сохраняет state_file из cfg.Discovery
+// (аварийный фолбэк переживает рестарт) и не строит встроенный docker-провайдер.
+// При выключенном discovery ведёт себя как NewManager: stateFile пуст, персист
+// отключён, провайдер не назначается.
+func NewManagerWithProvider(cfg *config.Config, log *zap.Logger, onUpdate func(*config.Config) error, provider Provider) (*Manager, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("discovery: config is nil")
+	}
+	m := &Manager{base: cfg, onUpdate: onUpdate, log: log}
+	if cfg.Discovery == nil || !cfg.Discovery.Enabled {
+		return m, nil
+	}
+	m.stateFile = cfg.Discovery.StateFile
+	m.provider = provider
+	return m, nil
+}
+
 // SetProvider заменяет провайдера discovery (например, на plugin-провайдер).
 // Вызывать до Start.
 func (m *Manager) SetProvider(p Provider) {

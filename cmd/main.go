@@ -76,16 +76,16 @@ func main() {
 
 	var mgr *discovery.Manager
 	if be := p.Plugins(); be != nil && be.Discovery != nil {
-		noDisc := *cfg
-		noDisc.Discovery = nil // менеджер не строит встроенный docker-провайдер
-		mgr, err = discovery.NewManager(&noDisc, log, func(updated *config.Config) error {
+		// cfg.Discovery остаётся нетронутым: менеджер сохраняет state_file и
+		// validate принимает discovery-only конфиг (без статических targets).
+		// Встроенный docker-провайдер не строится — используется plugin-провайдер.
+		mgr, err = discovery.NewManagerWithProvider(cfg, log, func(updated *config.Config) error {
 			return p.Reload(updated)
-		})
+		}, discovery.NewPluginProvider(be.Discovery))
 		if err != nil {
 			log.Error("Failed to create discovery manager", zap.Error(err))
 			os.Exit(1)
 		}
-		mgr.SetProvider(discovery.NewPluginProvider(be.Discovery))
 	} else {
 		mgr, err = discovery.NewManager(cfg, log, func(updated *config.Config) error {
 			return p.Reload(updated)
