@@ -1,0 +1,39 @@
+goos: linux
+goarch: amd64
+pkg: github.com/basili4-1982/api-gateway/benchmarks/2026-09-plugins-experiment
+cpu: 12th Gen Intel(R) Core(TM) i5-1235U
+BenchmarkGateway-12    	   24558	     96361 ns/op	   22739 B/op	     164 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=606.141µs p99=606.141µs
+    bench_test.go:104:   p50=735.168µs p99=3.841635ms
+    bench_test.go:104:   p50=765.436µs p99=5.254053ms
+    bench_test.go:104:   p50=751.757µs p99=5.281663ms
+BenchmarkGateway-12    	   43957	     55605 ns/op	   17870 B/op	     162 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=281.899µs p99=281.899µs
+    bench_test.go:104:   p50=603.529µs p99=2.730331ms
+    bench_test.go:104:   p50=636.099µs p99=4.789285ms
+    bench_test.go:104:   p50=411.564µs p99=3.135866ms
+    bench_test.go:104:   p50=385.884µs p99=3.536381ms
+BenchmarkGateway-12    	   48903	     51260 ns/op	   17004 B/op	     162 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=274.153µs p99=274.153µs
+    bench_test.go:104:   p50=436.191µs p99=2.730365ms
+    bench_test.go:104:   p50=404.838µs p99=4.642259ms
+    bench_test.go:104:   p50=358.916µs p99=3.190633ms
+    bench_test.go:104:   p50=361.014µs p99=3.592173ms
+BenchmarkGateway-12    	   53793	     46629 ns/op	   16813 B/op	     162 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=259.013µs p99=259.013µs
+    bench_test.go:104:   p50=318.155µs p99=1.832759ms
+    bench_test.go:104:   p50=332.938µs p99=2.861995ms
+    bench_test.go:104:   p50=348.969µs p99=3.097489ms
+BenchmarkGateway-12    	   46400	     56063 ns/op	   16656 B/op	     162 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=313.714µs p99=313.714µs
+    bench_test.go:104:   p50=507.871µs p99=4.095049ms
+    bench_test.go:104:   p50=444.747µs p99=4.382715ms
+    bench_test.go:104:   p50=378.633µs p99=3.495006ms
+    bench_test.go:104:   p50=385.674µs p99=4.038646ms
+PASS
+ok  	github.com/basili4-1982/api-gateway/benchmarks/2026-09-plugins-experiment	26.970s

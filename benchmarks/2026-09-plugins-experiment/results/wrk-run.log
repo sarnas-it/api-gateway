@@ -1,0 +1,49 @@
+==> build gateway and helpers
+go build -ldflags="-w -s" -trimpath -o bin/api-gateway ./cmd/
+go build -o bin/plugins/jwt ./cmd/plugins/jwt/
+go build -o bin/plugins/ratelimit ./cmd/plugins/ratelimit/
+go build -o bin/plugins/events ./cmd/plugins/events/
+go build -o bin/plugins/discovery ./cmd/plugins/discovery/
+go build -buildmode=plugin -trimpath -tags pluginmain -o bin/plugins/jwt.so ./cmd/plugins/jwt/
+==> JWT token generated (163 chars)
+== baseline-jwt (c50, 5 runs) ==
+  avg req/s: 22262
+== baseline-jwt (c300, 5 runs) ==
+  avg req/s: 29312
+== baseline-jwt (c50, 5 runs) ==
+  avg req/s: 22111
+== baseline-jwt (c300, 5 runs) ==
+  avg req/s: 28150
+== plugin-jwt-so (c50, 5 runs) ==
+  avg req/s: 9678
+== plugin-jwt-so (c300, 5 runs) ==
+  avg req/s: 20170
+== plugin-jwt-shared (c50, 5 runs) ==
+  avg req/s: 18172
+== plugin-jwt-shared (c300, 5 runs) ==
+  avg req/s: 26612
+== baseline-ratelimit (c50, 5 runs) ==
+  avg req/s: 26436
+== baseline-ratelimit (c300, 5 runs) ==
+  avg req/s: 23791
+== plugin-ratelimit-shared (c50, 5 runs) ==
+  avg req/s: 13155
+== plugin-ratelimit-shared (c300, 5 runs) ==
+  avg req/s: 15769
+== baseline-webhooks (c50, 5 runs) ==
+  avg req/s: 22755
+== baseline-webhooks (c300, 5 runs) ==
+  avg req/s: 16332
+== plugin-webhooks-fast (c50, 5 runs) ==
+  avg req/s: 16320
+== plugin-webhooks-fast (c300, 5 runs) ==
+  avg req/s: 22869
+== baseline-discovery (c50, 5 runs) ==
+  avg req/s: 26584
+== baseline-discovery (c300, 5 runs) ==
+  avg req/s: 26726
+== plugin-discovery-fast (c50, 5 runs) ==
+  avg req/s: 26046
+== plugin-discovery-fast (c300, 5 runs) ==
+  avg req/s: 25549
+DONE. Results in benchmarks/2026-09-plugins-experiment/results/

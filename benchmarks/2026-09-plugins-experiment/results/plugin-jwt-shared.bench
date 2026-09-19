@@ -1,0 +1,36 @@
+goos: linux
+goarch: amd64
+pkg: github.com/basili4-1982/api-gateway/benchmarks/2026-09-plugins-experiment
+cpu: 12th Gen Intel(R) Core(TM) i5-1235U
+BenchmarkGateway-12    	   23907	     90053 ns/op	   19845 B/op	     115 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=1.488738ms p99=1.488738ms
+    bench_test.go:104:   p50=929.704µs p99=6.109041ms
+    bench_test.go:104:   p50=902.254µs p99=4.654352ms
+    bench_test.go:104:   p50=804.228µs p99=4.011224ms
+BenchmarkGateway-12    	   32337	     70733 ns/op	   15620 B/op	     113 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=468.235µs p99=468.235µs
+    bench_test.go:104:   p50=1.164526ms p99=3.315912ms
+    bench_test.go:104:   p50=595.696µs p99=4.163932ms
+    bench_test.go:104:   p50=582.03µs p99=3.548016ms
+BenchmarkGateway-12    	   43692	     62799 ns/op	   14742 B/op	     112 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=347.711µs p99=347.711µs
+    bench_test.go:104:   p50=785.33µs p99=2.309683ms
+    bench_test.go:104:   p50=459.413µs p99=2.699621ms
+    bench_test.go:104:   p50=519.413µs p99=3.413913ms
+BenchmarkGateway-12    	   42139	     69296 ns/op	   14492 B/op	     112 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=214.439µs p99=214.439µs
+    bench_test.go:104:   p50=372.134µs p99=2.456488ms
+    bench_test.go:104:   p50=478.965µs p99=2.940429ms
+    bench_test.go:104:   p50=567.768µs p99=3.724503ms
+BenchmarkGateway-12    	   38871	     64047 ns/op	   14345 B/op	     112 allocs/op
+--- BENCH: BenchmarkGateway-12
+    bench_test.go:104:   p50=258.735µs p99=258.735µs
+    bench_test.go:104:   p50=611.931µs p99=3.35157ms
+    bench_test.go:104:   p50=521.182µs p99=3.456952ms
+    bench_test.go:104:   p50=524.569µs p99=3.525544ms
+PASS
+ok  	github.com/basili4-1982/api-gateway/benchmarks/2026-09-plugins-experiment	25.367s
