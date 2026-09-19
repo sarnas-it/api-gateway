@@ -60,6 +60,16 @@ func TestMultiProxyEventsPlugin(t *testing.T) {
 	}
 	defer mp.Stop(context.Background())
 
+	// Дискриминация: событие обязано уйти через плагин, а не через builtin
+	// publisher. Проверяем, что плагин стартовал и RPC-клиент вписан в publisher;
+	// без этого sink-ассерт прошёл бы и при удалённой обвязке setEventsClient.
+	if mp.Plugins() == nil || mp.Plugins().Events == nil {
+		t.Fatal("events plugin not started")
+	}
+	if mp.publisher == nil || mp.publisher.eventsClient == nil {
+		t.Fatal("publisher not wired to events plugin: builtin delivery would be used")
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	mp.ServeHTTP(rec, req)
