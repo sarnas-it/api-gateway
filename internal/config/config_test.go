@@ -185,6 +185,35 @@ routing:
 	}
 }
 
+func TestFindTargetForPath_HostBeatsHostlessOnEqualPrefix(t *testing.T) {
+	yaml := `
+targets:
+  - name: "frontend"
+    url: "http://frontend:3000"
+    path_prefix: "/"
+  - name: "chatcom"
+    url: "http://chatcom:8086"
+    path_prefix: "/"
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "frontend"
+    - host: "chatcom.online"
+      path_prefix: "/"
+      target_name: "chatcom"
+`
+	cfg, _, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg, _ := cfg.FindTargetForPath("/", "GET", "chatcom.online"); tg == nil || tg.Name != "chatcom" {
+		t.Errorf("chatcom.online: expected chatcom, got %v", tg)
+	}
+	if tg, _ := cfg.FindTargetForPath("/", "GET", "sarnas.ru"); tg == nil || tg.Name != "frontend" {
+		t.Errorf("sarnas.ru: expected frontend, got %v", tg)
+	}
+}
+
 func TestFindTargetForPath_HonorsMethods(t *testing.T) {
 	yaml := `
 targets:

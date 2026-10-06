@@ -823,9 +823,11 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 
 		// Ищем самый длинный совпадающий префикс
 		if strings.HasPrefix(path, rule.PathPrefix) {
-			if len(rule.PathPrefix) > bestMatchLen {
+			// При равной длине префикса правило с host конкретнее правила без host.
+			l := len(rule.PathPrefix)
+			if bestMatch == nil || l > bestMatchLen || (l == bestMatchLen && bestMatch.Host == "" && rule.Host != "") {
 				bestMatch = rule
-				bestMatchLen = len(rule.PathPrefix)
+				bestMatchLen = l
 			}
 		}
 	}
