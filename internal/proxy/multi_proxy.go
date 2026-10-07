@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/basili4-1982/api-gateway/internal/config"
+	"github.com/basili4-1982/api-gateway/internal/identity"
 	"github.com/basili4-1982/api-gateway/internal/jwtutil"
 	"github.com/basili4-1982/api-gateway/internal/permissions"
 	"github.com/golang-jwt/jwt/v5"
@@ -159,6 +161,7 @@ type MultiProxy struct {
 	handler            http.Handler
 	tracerProvider     *TracerProvider
 	permissionsManager *permissions.Manager
+	identity           *identity.Manager
 	publisher          *Publisher
 }
 
@@ -195,10 +198,19 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 		return nil, fmt.Errorf("failed to create JWT validator: %w", err)
 	}
 
+	var identityManager *identity.Manager
+	if cfg.Identity.Enabled {
+		identityManager, err = identity.NewManager(cfg.Identity, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create identity manager: %w", err)
+		}
+	}
+
 	mp := &MultiProxy{
 		targets:      make(map[string]*TargetProxy),
 		routeByRule:  make(map[*config.RoutingRule]*RouteConfig),
 		jwtValidator: jwtValidator,
+		identity:     identityManager,
 		logger:       logger,
 		metrics:      NewMetrics(cfg.MetricsEnabled),
 	}
@@ -525,58 +537,37 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		// auth on those routes without checking its signature.
 		claims, err := mp.jwtValidator.ParseAndValidate(authHeader)
 		if err != nil {
-			if authRequired {
+			// Наш JWT не прошёл — пробуем внешние identity-провайдеры на
+			// защищённых маршрутах (наш JWT-путь не меняется).
+			if mp.identity != nil && rule != nil && rule.Auth != nil && rule.Auth.Required {
+				user, ierr := mp.identity.Resolve(r.Context(), authHeader)
+				if ierr != nil {
+					return fmt.Errorf("invalid token: %w", ierr)
+				}
+				if len(rule.Auth.Roles) > 0 && !hasAnyRole(user.Roles, rule.Auth.Roles) {
+					return fmt.Errorf("missing any required role: %s", strings.Join(rule.Auth.Roles, ", "))
+				}
+				if len(rule.Auth.RolesAll) > 0 && !hasAllRoles(user.Roles, rule.Auth.RolesAll) {
+					return fmt.Errorf("missing required role: %s", rule.Auth.RolesAll[0])
+				}
+				mp.applyIdentityHeaders(r, user)
+			} else if authRequired {
 				return fmt.Errorf("invalid token: %w", err)
+			} else {
+				return nil
 			}
-			return nil
-		}
-		if err := mp.jwtValidator.ValidateClaims(claims); err != nil {
+		} else if cerr := mp.jwtValidator.ValidateClaims(claims); cerr != nil {
 			if authRequired {
-				return fmt.Errorf("invalid token claims: %w", err)
+				return fmt.Errorf("invalid token claims: %w", cerr)
 			}
 			return nil
-		}
-		if rule != nil && rule.Auth != nil && (len(rule.Auth.Roles) > 0 || len(rule.Auth.RolesAll) > 0) {
-			if err := mp.checkRoles(claims, rule.Auth.Roles, rule.Auth.RolesAll); err != nil {
-				return err
-			}
-		}
-		extracted := jwtutil.ExtractClaims(claims, mp.config.Load().JWT.ClaimMappings)
-		for claimName, headerName := range mp.config.Load().Headers.ClaimToHeader {
-			if val, ok := extracted[claimName]; ok {
-				r.Header.Set(headerName, fmt.Sprintf("%v", val))
-			}
-		}
-
-		// X-User-Signature: HMAC(user_id, api_secret) для верификации между сервисами
-		signHeader := mp.config.Load().Headers.SignHeader
-		if signHeader != "" {
-			if userIDVal, ok := extracted["id"]; ok {
-				userIDStr := fmt.Sprintf("%v", userIDVal)
-				secret := mp.config.Load().Permissions.APIKey
-				if secret != "" {
-					mac := hmac.New(sha256.New, []byte(secret))
-					mac.Write([]byte(userIDStr))
-					sig := hex.EncodeToString(mac.Sum(nil))
-					r.Header.Set(signHeader, sig)
+		} else {
+			if rule != nil && rule.Auth != nil && (len(rule.Auth.Roles) > 0 || len(rule.Auth.RolesAll) > 0) {
+				if err := mp.checkRoles(claims, rule.Auth.Roles, rule.Auth.RolesAll); err != nil {
+					return err
 				}
 			}
-		}
-
-		// X-User-Permissions: если включён модуль permissions
-		if mp.permissionsManager != nil {
-			userIDVal, ok := extracted["id"]
-			if ok {
-				userID, err := toInt(userIDVal)
-				if err == nil {
-					if err := mp.permissionsManager.SetHeader(r, userID); err != nil {
-						mp.logger.Warn("failed to set permissions header",
-							zap.Int("user_id", userID),
-							zap.Error(err),
-						)
-					}
-				}
-			}
+			mp.applyClaimHeaders(r, claims)
 		}
 	}
 
@@ -593,6 +584,82 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 	}
 
 	return nil
+}
+
+func (mp *MultiProxy) applyClaimHeaders(r *http.Request, claims jwt.MapClaims) {
+	extracted := jwtutil.ExtractClaims(claims, mp.config.Load().JWT.ClaimMappings)
+	for claimName, headerName := range mp.config.Load().Headers.ClaimToHeader {
+		if val, ok := extracted[claimName]; ok {
+			r.Header.Set(headerName, fmt.Sprintf("%v", val))
+		}
+	}
+	if userIDVal, ok := extracted["id"]; ok {
+		mp.setUserSignature(r, fmt.Sprintf("%v", userIDVal))
+		if userID, err := toInt(userIDVal); err == nil {
+			mp.setUserPermissions(r, userID)
+		}
+	}
+}
+
+func (mp *MultiProxy) applyIdentityHeaders(r *http.Request, user *identity.User) {
+	r.Header.Set("X-User-ID", strconv.Itoa(user.ID))
+	if user.Email != "" {
+		r.Header.Set("X-User-Email", user.Email)
+	}
+	if len(user.Roles) > 0 {
+		r.Header.Set("X-User-Roles", strings.Join(user.Roles, ","))
+	}
+	mp.setUserSignature(r, strconv.Itoa(user.ID))
+	mp.setUserPermissions(r, user.ID)
+}
+
+func (mp *MultiProxy) setUserSignature(r *http.Request, userID string) {
+	signHeader := mp.config.Load().Headers.SignHeader
+	secret := mp.config.Load().Permissions.APIKey
+	if signHeader == "" || secret == "" {
+		return
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(userID))
+	r.Header.Set(signHeader, hex.EncodeToString(mac.Sum(nil)))
+}
+
+func (mp *MultiProxy) setUserPermissions(r *http.Request, userID int) {
+	if mp.permissionsManager == nil {
+		return
+	}
+	if err := mp.permissionsManager.SetHeader(r, userID); err != nil {
+		mp.logger.Warn("failed to set permissions header",
+			zap.Int("user_id", userID), zap.Error(err))
+	}
+}
+
+func hasAllRoles(have, required []string) bool {
+	set := make(map[string]bool, len(have))
+	for _, r := range have {
+		set[r] = true
+	}
+	for _, req := range required {
+		if !set[req] {
+			return false
+		}
+	}
+	return true
+}
+
+// hasAnyRole сообщает, что у пользователя есть хотя бы одна из required ролей
+// (семантика auth.roles — any-of, как в нашем JWT-пути).
+func hasAnyRole(have, required []string) bool {
+	set := make(map[string]bool, len(have))
+	for _, r := range have {
+		set[r] = true
+	}
+	for _, req := range required {
+		if set[req] {
+			return true
+		}
+	}
+	return false
 }
 
 // checkRoles проверяет роли из claims по схеме
