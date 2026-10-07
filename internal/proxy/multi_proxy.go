@@ -353,7 +353,7 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 			case mp.identity != nil:
 				user, ierr := mp.identity.Resolve(r.Context(), authHeader)
 				if ierr != nil {
-					return fmt.Errorf("invalid token: %w", err)
+					return fmt.Errorf("invalid token: %w", ierr)
 				}
 				if len(rule.Auth.Roles) > 0 && !hasAllRoles(user.Roles, rule.Auth.Roles) {
 					return fmt.Errorf("missing required role: %s", rule.Auth.Roles[0])

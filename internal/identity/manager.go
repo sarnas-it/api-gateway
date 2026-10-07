@@ -26,10 +26,33 @@ type Manager struct {
 }
 
 func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error) {
-	var providers []provider
+	selected := make(map[string]bool, len(cfg.Selection))
+	for _, name := range cfg.Selection {
+		selected[name] = true
+	}
 
+	enabled := make(map[string]bool, len(cfg.Providers))
+	for _, pc := range cfg.Providers {
+		if pc.Enabled {
+			enabled[pc.Name] = true
+		}
+	}
+
+	if len(cfg.Selection) > 0 {
+		for _, name := range cfg.Selection {
+			if !enabled[name] {
+				logger.Warn("identity: selection entry does not match an enabled provider",
+					zap.String("provider", name))
+			}
+		}
+	}
+
+	var providers []provider
 	for _, pc := range cfg.Providers {
 		if !pc.Enabled {
+			continue
+		}
+		if len(cfg.Selection) > 0 && !selected[pc.Name] {
 			continue
 		}
 		v, err := jwtutil.NewJWTValidator(
@@ -43,7 +66,6 @@ func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error)
 		providers = append(providers, provider{name: pc.Name, validator: v, emailClaim: pc.EmailClaim})
 	}
 
-	providers = filterProviders(providers, cfg.Selection)
 	if len(providers) == 0 {
 		return nil, errors.New("identity: no providers selected")
 	}
@@ -57,9 +79,6 @@ func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error)
 
 // Resolve проверяет токен по выбранным провайдерам и возвращает нашего пользователя.
 func (m *Manager) Resolve(ctx context.Context, token string) (*User, error) {
-	if m == nil {
-		return nil, errors.New("identity: no provider matched")
-	}
 	for _, p := range m.providers {
 		claims, err := p.validator.ParseAndValidate(token)
 		if err != nil {
@@ -91,21 +110,4 @@ func (m *Manager) Resolve(ctx context.Context, token string) (*User, error) {
 	}
 
 	return nil, errors.New("identity: no provider matched")
-}
-
-func filterProviders(all []provider, selection []string) []provider {
-	if len(selection) == 0 {
-		return all
-	}
-	want := make(map[string]bool, len(selection))
-	for _, s := range selection {
-		want[s] = true
-	}
-	var out []provider
-	for _, p := range all {
-		if want[p.name] {
-			out = append(out, p)
-		}
-	}
-	return out
 }

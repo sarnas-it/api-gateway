@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -297,5 +298,89 @@ identity:
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for duplicate provider name")
+	}
+}
+
+func TestLoad_IdentityProviderSecretEqualsJWTSecret(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+jwt:
+  secret_key: "our-secret"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "partner"
+      enabled: true
+      algorithm: "HS256"
+      secret_key: "our-secret"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error when provider secret equals jwt.secret_key")
+	}
+	if !strings.Contains(err.Error(), "partner") {
+		t.Fatalf("error must name the provider, got: %v", err)
+	}
+}
+
+func TestLoad_IdentityProviderSecretEqualsAPIKey(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+jwt:
+  secret_key: "our-secret"
+permissions:
+  api_key: "php-secret"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "partner"
+      enabled: true
+      algorithm: "HS256"
+      secret_key: "php-secret"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error when provider secret equals permissions.api_key")
+	}
+	if !strings.Contains(err.Error(), "partner") {
+		t.Fatalf("error must name the provider, got: %v", err)
+	}
+}
+
+func TestLoad_IdentityDistinctSecretsAllowed(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+jwt:
+  secret_key: "our-secret"
+permissions:
+  api_key: "php-secret"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "partner"
+      enabled: true
+      algorithm: "HS256"
+      secret_key: "partner-secret"
+`
+	path := writeTempConfig(t, yaml)
+	if _, err := Load(path); err != nil {
+		t.Fatalf("distinct secrets must be accepted, got: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,8 +31,10 @@ type lookupClient struct {
 }
 
 func newLookupClient(baseURL, secret string) *lookupClient {
+	// Обрезаем завершающий "/", иначе baseURL+path даёт "//api/v1/...", а
+	// подпись считается по "/api/v1/...", и passport отклоняет запрос (401).
 	return &lookupClient{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		secret:  secret,
 		http:    &http.Client{Timeout: 3 * time.Second},
 	}

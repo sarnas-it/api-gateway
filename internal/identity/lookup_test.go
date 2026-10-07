@@ -48,6 +48,37 @@ func TestLookupClient_FetchFound(t *testing.T) {
 	}
 }
 
+func TestLookupClient_TrailingSlashBaseURL(t *testing.T) {
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		if r.URL.Path != "/api/v1/internal/user-by-email" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		uid := r.Header.Get(hmacauth.UserIDHeader)
+		sig := r.Header.Get(hmacauth.SignatureHeader)
+		ts := r.Header.Get(hmacauth.TimestampHeader)
+		if !hmacauth.VerifyRequest(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":9,"email":"partner@example.com","is_active":true}}`))
+	}))
+	defer srv.Close()
+
+	c := newLookupClient(srv.URL+"/", "internal-secret")
+	u, err := c.fetch(context.Background(), "partner@example.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 9 {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+	if !hit {
+		t.Fatal("lookup server was not hit")
+	}
+}
+
 func TestLookupClient_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
