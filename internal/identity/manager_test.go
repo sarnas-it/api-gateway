@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/basili4-1982/api-gateway/internal/config"
 )
@@ -119,13 +120,85 @@ func TestResolve_SelectionExcludesProvider(t *testing.T) {
 	defer srv.Close()
 	cfg := managerCfg(srv.URL)
 	cfg.Selection = []string{"other"}
-	m, _ := NewManager(cfg, zap.NewNop())
 
-	token := signHS256(t, "partner-secret", jwt.MapClaims{
+	m, err := NewManager(cfg, zap.NewNop())
+	if m != nil {
+		t.Fatal("expected nil manager when selection matches no enabled provider")
+	}
+	if err == nil {
+		t.Fatal("expected error when selection matches no enabled provider")
+	}
+}
+
+func TestResolve_EmptySelectionIncludesAllEnabled(t *testing.T) {
+	srv := lookupServer(t)
+	defer srv.Close()
+	cfg := managerCfg(srv.URL)
+	cfg.Selection = nil
+	cfg.Providers = append(cfg.Providers, config.IdentityProviderConfig{
+		Name: "other", Enabled: true, Algorithm: "HS256",
+		SecretKey: "other-secret", ValidateExp: true, EmailClaim: "email",
+	})
+
+	m, err := NewManager(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Токен второго (тоже enabled) провайдера должен резолвиться при пустом селекторе.
+	token := signHS256(t, "other-secret", jwt.MapClaims{
+		"email": "active@example.com",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	u, err := m.Resolve(context.Background(), token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.ID != 42 {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+}
+
+func TestResolve_SelectedProviderRejectsToken(t *testing.T) {
+	srv := lookupServer(t)
+	defer srv.Close()
+	cfg := managerCfg(srv.URL)
+	cfg.Selection = []string{"partner"}
+	cfg.Providers = append(cfg.Providers, config.IdentityProviderConfig{
+		Name: "other", Enabled: true, Algorithm: "HS256",
+		SecretKey: "other-secret", ValidateExp: true, EmailClaim: "email",
+	})
+
+	m, err := NewManager(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Токен невыбранного провайдера не должен приниматься выбранным.
+	token := signHS256(t, "other-secret", jwt.MapClaims{
 		"email": "active@example.com",
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
 	if _, err := m.Resolve(context.Background(), token); err == nil {
-		t.Fatal("expected error when provider not selected")
+		t.Fatal("expected error when token is signed by a non-selected provider")
+	}
+}
+
+func TestNewManager_UnknownSelectionWarns(t *testing.T) {
+	srv := lookupServer(t)
+	defer srv.Close()
+	cfg := managerCfg(srv.URL)
+	cfg.Selection = []string{"partner", "ghost"}
+
+	core, logs := observer.New(zap.WarnLevel)
+	m, err := NewManager(cfg, zap.New(core))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected manager when at least one selection entry is valid")
+	}
+	if got := logs.FilterMessage("identity: selection entry does not match an enabled provider").Len(); got != 1 {
+		t.Fatalf("expected one warning for unknown selection entry, got %d: %v", got, logs.All())
 	}
 }

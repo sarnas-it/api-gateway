@@ -825,6 +825,16 @@ func (c *Config) validate() error {
 			if len(p.Algorithm) < 2 {
 				return fmt.Errorf("identity provider %s: invalid algorithm %q", p.Name, p.Algorithm)
 			}
+			// Инвариант разделения секретов: партнёрский HMAC-секрет не должен
+			// совпадать с нашими, иначе партнёрский токен прошёл бы как наш.
+			if strings.HasPrefix(strings.ToUpper(p.Algorithm), "HS") {
+				if p.SecretKey != "" && p.SecretKey == c.JWT.SecretKey {
+					return fmt.Errorf("identity provider %s: secret_key must differ from jwt.secret_key", p.Name)
+				}
+				if p.SecretKey != "" && p.SecretKey == c.Permissions.APIKey {
+					return fmt.Errorf("identity provider %s: secret_key must differ from permissions.api_key", p.Name)
+				}
+			}
 		}
 		if c.Identity.UserLookup.ServiceURL == "" {
 			return fmt.Errorf("identity.user_lookup.service_url is required when identity.enabled is true")
