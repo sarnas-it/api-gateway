@@ -355,8 +355,8 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 				if ierr != nil {
 					return fmt.Errorf("invalid token: %w", ierr)
 				}
-				if len(rule.Auth.Roles) > 0 && !hasAllRoles(user.Roles, rule.Auth.Roles) {
-					return fmt.Errorf("missing required role: %s", rule.Auth.Roles[0])
+				if len(rule.Auth.Roles) > 0 && !hasAnyRole(user.Roles, rule.Auth.Roles) {
+					return fmt.Errorf("missing any required role: %s", strings.Join(rule.Auth.Roles, ", "))
 				}
 				mp.applyIdentityHeaders(r, user, rule)
 
@@ -469,6 +469,21 @@ func hasAllRoles(have, required []string) bool {
 		}
 	}
 	return true
+}
+
+// hasAnyRole сообщает, что у пользователя есть хотя бы одна из required ролей
+// (семантика auth.roles — any-of, как в нашем JWT-пути).
+func hasAnyRole(have, required []string) bool {
+	set := make(map[string]bool, len(have))
+	for _, r := range have {
+		set[r] = true
+	}
+	for _, req := range required {
+		if set[req] {
+			return true
+		}
+	}
+	return false
 }
 
 func (mp *MultiProxy) checkRoles(claims jwt.MapClaims, requiredRoles []string) error {
