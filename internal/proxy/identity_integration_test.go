@@ -75,3 +75,71 @@ func TestModifyRequest_ExternalTokenMapsToOurUser(t *testing.T) {
 		t.Fatalf("signature mismatch: got %q want %q", got, want)
 	}
 }
+
+// TestModifyRequest_ExternalTokenRoleGate verifies that the external identity
+// path mirrors the our-JWT role semantics: Auth.Roles is any-of and
+// Auth.RolesAll is all-of.
+func TestModifyRequest_ExternalTokenRoleGate(t *testing.T) {
+	lookupSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":42,"email":"partner@example.com","is_active":true,"roles":["viewer","editor"]}}`))
+	}))
+	defer lookupSrv.Close()
+
+	cfg := &config.Config{}
+	cfg.Server.Port = 8080
+	cfg.JWT.SecretKey = "our-secret"
+	cfg.JWT.Algorithm = "HS256"
+	cfg.Permissions.APIKey = "php-secret"
+	cfg.Headers.SignHeader = "X-User-Signature"
+	cfg.Targets = []config.TargetConfig{{Name: "api", URL: "http://127.0.0.1:1", Timeout: time.Second}}
+	cfg.Identity = config.IdentityConfig{
+		Enabled: true,
+		UserLookup: config.IdentityUserLookupConfig{
+			ServiceURL: lookupSrv.URL, HMACSecret: "internal-secret", CacheTTL: time.Minute,
+		},
+		Providers: []config.IdentityProviderConfig{{
+			Name: "partner", Enabled: true, Algorithm: "HS256",
+			SecretKey: "partner-secret", ValidateExp: true, EmailClaim: "email",
+		}},
+	}
+
+	mp, err := NewMultiProxy(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"email": "partner@example.com",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	signed, _ := tok.SignedString([]byte("partner-secret"))
+
+	cases := []struct {
+		name    string
+		auth    *config.AuthRule
+		wantErr bool
+	}{
+		{"any-of one of several allowed", &config.AuthRule{Required: true, Roles: []string{"editor", "admin"}}, false},
+		{"any-of none rejected", &config.AuthRule{Required: true, Roles: []string{"admin"}}, true},
+		{"all-of missing role rejected", &config.AuthRule{Required: true, RolesAll: []string{"viewer", "admin"}}, true},
+		{"all-of all present allowed", &config.AuthRule{Required: true, RolesAll: []string{"viewer", "editor"}}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/v1/anything", nil)
+			req.Header.Set("Authorization", "Bearer "+signed)
+			err := mp.modifyRequest(req, &cfg.Targets[0], &config.RoutingRule{Auth: tc.auth})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
