@@ -2,18 +2,39 @@ package identity
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	hmacauth "github.com/X-didgital/go-hmac-auth"
-
 	"github.com/basili4-1982/api-gateway/internal/config"
 )
+
+// Заголовки внутренней HMAC-подписи (совпадают с go-hmac-auth).
+const (
+	hmacUserIDHeader    = "X-User-ID"
+	hmacSignatureHeader = "X-User-Signature"
+	hmacTimestampHeader = "X-User-Timestamp"
+)
+
+// signHMACV2 повторяет схему подписи go-hmac-auth v2:
+// hex(HMAC-SHA256(secret, userID + "\n" + METHOD + "\n" + path + "\n" + timestamp)).
+// Реализовано локально, чтобы публичный api-gateway не зависел от приватного
+// модуля github.com/X-didgital/go-hmac-auth. Должно совпадать с VerifyRequest
+// на стороне passport-service.
+func signHMACV2(userID, method, path, secret string, ts time.Time) (signature, timestamp string) {
+	timestamp = strconv.FormatInt(ts.Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(userID + "\n" + strings.ToUpper(method) + "\n" + path + "\n" + timestamp))
+	return hex.EncodeToString(mac.Sum(nil)), timestamp
+}
 
 // User — минимальный профиль нашего пользователя, нужный шлюзу.
 type User struct {
@@ -57,10 +78,10 @@ func (c *lookupClient) fetch(ctx context.Context, email string) (*User, error) {
 	}
 
 	ts := time.Now()
-	sig, tsStr := hmacauth.SignRequest("gateway", http.MethodGet, path, c.secret, ts)
-	req.Header.Set(hmacauth.UserIDHeader, "gateway")
-	req.Header.Set(hmacauth.SignatureHeader, sig)
-	req.Header.Set(hmacauth.TimestampHeader, tsStr)
+	sig, tsStr := signHMACV2("gateway", http.MethodGet, path, c.secret, ts)
+	req.Header.Set(hmacUserIDHeader, "gateway")
+	req.Header.Set(hmacSignatureHeader, sig)
+	req.Header.Set(hmacTimestampHeader, tsStr)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

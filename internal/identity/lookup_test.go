@@ -2,16 +2,30 @@ package identity
 
 import (
 	"context"
+	"crypto/hmac"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	hmacauth "github.com/X-didgital/go-hmac-auth"
-
 	"github.com/basili4-1982/api-gateway/internal/config"
 )
+
+// verifyHMACV2 повторяет серверную проверку go-hmac-auth VerifyRequest.
+func verifyHMACV2(userID, method, path, ts, sig, secret string, now time.Time) bool {
+	unix, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return false
+	}
+	issued := time.Unix(unix, 0)
+	if d := now.Sub(issued); d > 5*time.Minute || d < -5*time.Minute {
+		return false
+	}
+	expected, _ := signHMACV2(userID, method, path, secret, issued)
+	return hmac.Equal([]byte(expected), []byte(sig))
+}
 
 func TestLookupClient_FetchFound(t *testing.T) {
 	var calls int32
@@ -23,10 +37,10 @@ func TestLookupClient_FetchFound(t *testing.T) {
 		if r.URL.Query().Get("email") != "partner@example.com" {
 			t.Errorf("unexpected email %s", r.URL.Query().Get("email"))
 		}
-		uid := r.Header.Get(hmacauth.UserIDHeader)
-		sig := r.Header.Get(hmacauth.SignatureHeader)
-		ts := r.Header.Get(hmacauth.TimestampHeader)
-		if !hmacauth.VerifyRequest(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
+		uid := r.Header.Get(hmacUserIDHeader)
+		sig := r.Header.Get(hmacSignatureHeader)
+		ts := r.Header.Get(hmacTimestampHeader)
+		if !verifyHMACV2(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -55,10 +69,10 @@ func TestLookupClient_TrailingSlashBaseURL(t *testing.T) {
 		if r.URL.Path != "/api/v1/internal/user-by-email" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
-		uid := r.Header.Get(hmacauth.UserIDHeader)
-		sig := r.Header.Get(hmacauth.SignatureHeader)
-		ts := r.Header.Get(hmacauth.TimestampHeader)
-		if !hmacauth.VerifyRequest(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
+		uid := r.Header.Get(hmacUserIDHeader)
+		sig := r.Header.Get(hmacSignatureHeader)
+		ts := r.Header.Get(hmacTimestampHeader)
+		if !verifyHMACV2(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
