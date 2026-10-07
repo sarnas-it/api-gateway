@@ -594,8 +594,8 @@ func (mp *MultiProxy) applyClaimHeaders(r *http.Request, claims jwt.MapClaims) {
 		}
 	}
 	if userIDVal, ok := extracted["id"]; ok {
+		mp.setUserSignature(r, fmt.Sprintf("%v", userIDVal))
 		if userID, err := toInt(userIDVal); err == nil {
-			mp.setUserSignature(r, userID)
 			mp.setUserPermissions(r, userID)
 		}
 	}
@@ -609,18 +609,18 @@ func (mp *MultiProxy) applyIdentityHeaders(r *http.Request, user *identity.User)
 	if len(user.Roles) > 0 {
 		r.Header.Set("X-User-Roles", strings.Join(user.Roles, ","))
 	}
-	mp.setUserSignature(r, user.ID)
+	mp.setUserSignature(r, strconv.Itoa(user.ID))
 	mp.setUserPermissions(r, user.ID)
 }
 
-func (mp *MultiProxy) setUserSignature(r *http.Request, userID int) {
+func (mp *MultiProxy) setUserSignature(r *http.Request, userID string) {
 	signHeader := mp.config.Load().Headers.SignHeader
 	secret := mp.config.Load().Permissions.APIKey
 	if signHeader == "" || secret == "" {
 		return
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(strconv.Itoa(userID)))
+	mac.Write([]byte(userID))
 	r.Header.Set(signHeader, hex.EncodeToString(mac.Sum(nil)))
 }
 
