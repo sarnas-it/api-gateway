@@ -11,18 +11,19 @@ import (
 
 // Config представляет основную структуру конфигурации
 type Config struct {
-	App       `yaml:"application"`
-	Server    ServerConfig    `yaml:"server"`
-	TLS       *TLSConfig      `yaml:"tls,omitempty"`
-	Static    *StaticConfig   `yaml:"static,omitempty"`
-	Targets   []TargetConfig  `yaml:"targets"`
-	JWT       JWTConfig       `yaml:"jwt"`
-	BasicAuth BasicAuthConfig `yaml:"basic_auth"`
-	Logging   LoggingConfig   `yaml:"logging"`
-	Headers   HeadersConfig   `yaml:"headers"`
-	Routing    RoutingConfig      `yaml:"routing"`
+	App         `yaml:"application"`
+	Server      ServerConfig      `yaml:"server"`
+	TLS         *TLSConfig        `yaml:"tls,omitempty"`
+	Static      *StaticConfig     `yaml:"static,omitempty"`
+	Targets     []TargetConfig    `yaml:"targets"`
+	JWT         JWTConfig         `yaml:"jwt"`
+	BasicAuth   BasicAuthConfig   `yaml:"basic_auth"`
+	Logging     LoggingConfig     `yaml:"logging"`
+	Headers     HeadersConfig     `yaml:"headers"`
+	Routing     RoutingConfig     `yaml:"routing"`
 	Permissions PermissionsConfig `yaml:"permissions"`
-	Webhooks   []WebhookConfig   `yaml:"webhooks"`
+	Identity    IdentityConfig    `yaml:"identity"`
+	Webhooks    []WebhookConfig   `yaml:"webhooks"`
 }
 
 // TLSConfig конфигурация TLS с автосертификатами (Let's Encrypt)
@@ -151,12 +152,41 @@ type CORSConfig struct {
 
 // PermissionsConfig конфигурация модуля разрешений (permission-service)
 type PermissionsConfig struct {
-	Enabled           bool          `yaml:"enabled"`
-	ServiceURL        string        `yaml:"service_url"`
-	CacheTTL          time.Duration `yaml:"cache_ttl"`
-	HeaderName        string        `yaml:"header_name"`
-	InvalidateToken   string        `yaml:"invalidate_token"`
-	APIKey            string        `yaml:"api_key"`
+	Enabled         bool          `yaml:"enabled"`
+	ServiceURL      string        `yaml:"service_url"`
+	CacheTTL        time.Duration `yaml:"cache_ttl"`
+	HeaderName      string        `yaml:"header_name"`
+	InvalidateToken string        `yaml:"invalidate_token"`
+	APIKey          string        `yaml:"api_key"`
+}
+
+// IdentityConfig — федерация внешней идентичности (внешние JWT-провайдеры)
+type IdentityConfig struct {
+	Enabled    bool                     `yaml:"enabled"`
+	Selection  []string                 `yaml:"selection"` // пусто = все enabled
+	UserLookup IdentityUserLookupConfig `yaml:"user_lookup"`
+	Providers  []IdentityProviderConfig `yaml:"providers"`
+}
+
+// IdentityUserLookupConfig — резолв email → наш пользователь через passport
+type IdentityUserLookupConfig struct {
+	ServiceURL string        `yaml:"service_url"`
+	HMACSecret string        `yaml:"hmac_secret"`
+	CacheTTL   time.Duration `yaml:"cache_ttl"`
+}
+
+// IdentityProviderConfig — один доверенный внешний JWT-провайдер
+type IdentityProviderConfig struct {
+	Name          string `yaml:"name"`
+	Enabled       bool   `yaml:"enabled"`
+	Issuer        string `yaml:"issuer"`
+	Algorithm     string `yaml:"algorithm"`
+	PublicKeyFile string `yaml:"public_key_file"`
+	SecretKey     string `yaml:"secret_key"`
+	ValidateExp   bool   `yaml:"validate_exp"`
+	ValidateIss   bool   `yaml:"validate_iss"`
+	ExpectedIss   string `yaml:"expected_iss"`
+	EmailClaim    string `yaml:"email_claim"`
 }
 
 // HeadersConfig конфигурация заголовков
@@ -187,16 +217,16 @@ const (
 
 // WebhookConfig конфигурация вебхука/NATS публикации событий
 type WebhookConfig struct {
-	Name        string           `yaml:"name"`
-	Transport   WebhookTransport `yaml:"transport"`
-	NATSURL     string           `yaml:"nats_url"`
-	Subject     string           `yaml:"subject"`
-	WebhookURL  string           `yaml:"webhook_url"`
-	Trigger     WebhookTrigger   `yaml:"trigger"`
-	Methods     []string         `yaml:"methods"`
-	OnStatusCodes []int          `yaml:"on_status_codes"`
-	ExcludePaths []string        `yaml:"exclude_paths"`
-	Async       bool             `yaml:"async"`
+	Name          string           `yaml:"name"`
+	Transport     WebhookTransport `yaml:"transport"`
+	NATSURL       string           `yaml:"nats_url"`
+	Subject       string           `yaml:"subject"`
+	WebhookURL    string           `yaml:"webhook_url"`
+	Trigger       WebhookTrigger   `yaml:"trigger"`
+	Methods       []string         `yaml:"methods"`
+	OnStatusCodes []int            `yaml:"on_status_codes"`
+	ExcludePaths  []string         `yaml:"exclude_paths"`
+	Async         bool             `yaml:"async"`
 }
 
 // LoggingConfig конфигурация логирования
@@ -302,6 +332,18 @@ func (c *Config) setDefaults() {
 		}
 	}
 
+	if c.Identity.UserLookup.CacheTTL == 0 {
+		c.Identity.UserLookup.CacheTTL = 300 * time.Second
+	}
+	for i := range c.Identity.Providers {
+		if c.Identity.Providers[i].Algorithm == "" {
+			c.Identity.Providers[i].Algorithm = "HS256"
+		}
+		if c.Identity.Providers[i].EmailClaim == "" {
+			c.Identity.Providers[i].EmailClaim = "email"
+		}
+	}
+
 	// Создаем правила маршрутизации из таргетов, если не заданы явно
 	if len(c.Routing.Rules) == 0 {
 		for _, target := range c.Targets {
@@ -395,6 +437,29 @@ func (c *Config) validate() error {
 		}
 		if wh.Trigger == "" {
 			return fmt.Errorf("webhook %s: trigger is required (on_request|on_response)", wh.Name)
+		}
+	}
+
+	if c.Identity.Enabled {
+		if len(c.Identity.Providers) == 0 {
+			return fmt.Errorf("identity.enabled requires at least one provider")
+		}
+		names := make(map[string]bool, len(c.Identity.Providers))
+		for i := range c.Identity.Providers {
+			p := &c.Identity.Providers[i]
+			if p.Name == "" {
+				return fmt.Errorf("identity provider name is required")
+			}
+			if names[p.Name] {
+				return fmt.Errorf("duplicate identity provider name: %s", p.Name)
+			}
+			names[p.Name] = true
+			if len(p.Algorithm) < 2 {
+				return fmt.Errorf("identity provider %s: invalid algorithm %q", p.Name, p.Algorithm)
+			}
+		}
+		if c.Identity.UserLookup.ServiceURL == "" {
+			return fmt.Errorf("identity.user_lookup.service_url is required when identity.enabled is true")
 		}
 	}
 

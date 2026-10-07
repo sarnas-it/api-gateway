@@ -222,3 +222,80 @@ tls:
 		t.Fatal("expected error for TLS without email")
 	}
 }
+
+func TestLoad_IdentityProviders(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+jwt:
+  secret_key: "our-secret"
+identity:
+  enabled: true
+  selection: ["partner-x"]
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "partner-x"
+      enabled: true
+      algorithm: "HS256"
+      secret_key: "partner-secret"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.Identity.Enabled {
+		t.Fatal("expected identity enabled")
+	}
+	if cfg.Identity.UserLookup.CacheTTL != 300*time.Second {
+		t.Fatalf("expected default cache ttl 300s, got %v", cfg.Identity.UserLookup.CacheTTL)
+	}
+	if cfg.Identity.Providers[0].EmailClaim != "email" {
+		t.Fatalf("expected default email_claim email, got %q", cfg.Identity.Providers[0].EmailClaim)
+	}
+	if cfg.Identity.Providers[0].SecretKey != "partner-secret" {
+		t.Fatalf("expected partner secret, got %q", cfg.Identity.Providers[0].SecretKey)
+	}
+}
+
+func TestLoad_IdentityEnabledWithoutProviders(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+identity:
+  enabled: true
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for identity enabled without providers")
+	}
+}
+
+func TestLoad_IdentityDuplicateProviderName(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+  providers:
+    - name: "dup"
+      algorithm: "HS256"
+      secret_key: "a"
+    - name: "dup"
+      algorithm: "HS256"
+      secret_key: "b"
+`
+	path := writeTempConfig(t, yaml)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for duplicate provider name")
+	}
+}
