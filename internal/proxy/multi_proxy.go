@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -359,6 +360,22 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 				}
 			}
 
+			// X-Service-ID/X-Key-ID/X-User-Timestamp/X-User-Signature: HMAC v3 —
+			// подпись per-request для внутренних сервисов на go-hmac-auth.
+			// Секрет задаётся только в приватном конфиге (не в публичном репо).
+			if rule.SignV3 != nil && rule.SignV3.ServiceID != "" && rule.SignV3.Secret != "" {
+				if userIDVal, ok := extracted["id"]; ok {
+					userIDStr := fmt.Sprintf("%v", userIDVal)
+					sig, tsStr := signV3(rule.SignV3.ServiceID, userIDStr, r.Method, r.URL.Path,
+						rule.SignV3.Secret, time.Now().UTC().Unix())
+					r.Header.Set("X-Service-ID", rule.SignV3.ServiceID)
+					r.Header.Set("X-Key-ID", rule.SignV3.KeyID)
+					r.Header.Set("X-User-ID", userIDStr)
+					r.Header.Set("X-User-Timestamp", tsStr)
+					r.Header.Set("X-User-Signature", sig)
+				}
+			}
+
 			// X-User-Permissions: если включён модуль permissions
 			if mp.permissionsManager != nil {
 				userIDVal, ok := extracted["id"]
@@ -392,6 +409,16 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 	}
 
 	return nil
+}
+
+// signV3 формирует подпись HMAC-SHA256 v3 (как в go-hmac-auth):
+// HMAC(secret, serviceID + "\n" + userID + "\n" + UPPER(method) + "\n" + path + "\n" + timestamp).
+func signV3(serviceID, userID, method, path, secret string, tsUnix int64) (signature, timestamp string) {
+	timestamp = strconv.FormatInt(tsUnix, 10)
+	msg := serviceID + "\n" + userID + "\n" + strings.ToUpper(method) + "\n" + path + "\n" + timestamp
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(msg))
+	return hex.EncodeToString(mac.Sum(nil)), timestamp
 }
 
 func (mp *MultiProxy) checkRoles(claims jwt.MapClaims, requiredRoles []string) error {
