@@ -92,6 +92,16 @@ type RoutingRule struct {
 	StripPath  bool           `yaml:"strip_path"`           // удалять префикс при проксировании
 	Auth       *AuthRule      `yaml:"auth,omitempty"`       // per-route auth конфиг
 	RateLimit  *RateLimitRule `yaml:"rate_limit,omitempty"` // per-route rate limit
+	SignV3     *SignV3Config  `yaml:"sign_v3,omitempty"`    // per-route HMAC v3 подпись запроса
+}
+
+// SignV3Config — per-route подпись запроса HMAC v3 для внутренних сервисов
+// на go-hmac-auth (заголовки X-Service-ID/X-Key-ID/X-User-Timestamp/
+// X-User-Signature). Секрет задаётся только на сервере / в приватном конфиге.
+type SignV3Config struct {
+	ServiceID string `yaml:"service_id"`
+	KeyID     string `yaml:"key_id"`
+	Secret    string `yaml:"secret"`
 }
 
 // AuthRule конфигурация аутентификации для роута
