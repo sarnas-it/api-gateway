@@ -568,6 +568,7 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 				}
 			}
 			mp.applyClaimHeaders(r, claims)
+			mp.applySignV3(r, claims, rule)
 		}
 	}
 
@@ -599,6 +600,38 @@ func (mp *MultiProxy) applyClaimHeaders(r *http.Request, claims jwt.MapClaims) {
 			mp.setUserPermissions(r, userID)
 		}
 	}
+}
+
+// applySignV3 добавляет per-route HMAC v3 подпись (X-Service-ID/X-Key-ID/
+// X-User-Timestamp/X-User-Signature) для внутренних сервисов на go-hmac-auth.
+// Секрет задаётся только в приватном конфиге/на сервере.
+func (mp *MultiProxy) applySignV3(r *http.Request, claims jwt.MapClaims, rule *config.RoutingRule) {
+	if rule == nil || rule.SignV3 == nil || rule.SignV3.ServiceID == "" || rule.SignV3.Secret == "" {
+		return
+	}
+	extracted := jwtutil.ExtractClaims(claims, mp.config.Load().JWT.ClaimMappings)
+	userIDVal, ok := extracted["id"]
+	if !ok {
+		return
+	}
+	userIDStr := fmt.Sprintf("%v", userIDVal)
+	sig, tsStr := signV3(rule.SignV3.ServiceID, userIDStr, r.Method, r.URL.Path,
+		rule.SignV3.Secret, time.Now().UTC().Unix())
+	r.Header.Set("X-Service-ID", rule.SignV3.ServiceID)
+	r.Header.Set("X-Key-ID", rule.SignV3.KeyID)
+	r.Header.Set("X-User-ID", userIDStr)
+	r.Header.Set("X-User-Timestamp", tsStr)
+	r.Header.Set("X-User-Signature", sig)
+}
+
+// signV3 формирует подпись HMAC-SHA256 v3 (как в go-hmac-auth):
+// HMAC(secret, serviceID + "\n" + userID + "\n" + UPPER(method) + "\n" + path + "\n" + timestamp).
+func signV3(serviceID, userID, method, path, secret string, tsUnix int64) (signature, timestamp string) {
+	timestamp = strconv.FormatInt(tsUnix, 10)
+	msg := serviceID + "\n" + userID + "\n" + strings.ToUpper(method) + "\n" + path + "\n" + timestamp
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(msg))
+	return hex.EncodeToString(mac.Sum(nil)), timestamp
 }
 
 func (mp *MultiProxy) applyIdentityHeaders(r *http.Request, user *identity.User) {

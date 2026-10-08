@@ -71,6 +71,18 @@ routing:
         requests_per_second: 5
         burst: 10
 
+    # admin-backend (внутренний сервис админки): JWT-проверка + подпись HMAC v3.
+    # Реальный secret задаётся только в приватном конфиге/на сервере.
+    - path_prefix: "/api/v1/jobs"
+      target_name: "admin-backend"
+      strip_path: false
+      auth:
+        required: true
+      sign_v3:
+        service_id: "admin-front"
+        key_id: "1"
+        secret: "change-me"
+
     - path_prefix: "/api/v1/auth/refresh"
       target_name: "auth-api"
       methods: ["POST"]
