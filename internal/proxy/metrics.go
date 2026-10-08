@@ -17,26 +17,12 @@ type Metrics struct {
 	mu               sync.RWMutex
 }
 
-func expvarMap(name string) *expvar.Map {
-	if v, ok := expvar.Get(name).(*expvar.Map); ok {
-		return v
-	}
-	return expvar.NewMap(name)
-}
-
-func expvarInt(name string) *expvar.Int {
-	if v, ok := expvar.Get(name).(*expvar.Int); ok {
-		return v
-	}
-	return expvar.NewInt(name)
-}
-
 func NewMetrics() *Metrics {
 	m := &Metrics{
-		requestsTotal:    expvarMap("gateway_requests_total"),
-		requestDuration:  expvarMap("gateway_request_duration_ms"),
-		rateLimitDenials: expvarInt("gateway_rate_limit_denials_total"),
-		targetUp:         expvarMap("gateway_target_up"),
+		requestsTotal:    expvar.NewMap("gateway_requests_total"),
+		requestDuration:  expvar.NewMap("gateway_request_duration_ms"),
+		rateLimitDenials: expvar.NewInt("gateway_rate_limit_denials_total"),
+		targetUp:         expvar.NewMap("gateway_target_up"),
 	}
 	return m
 }
@@ -78,7 +64,7 @@ func (m *Metrics) DecActiveRequests() {
 }
 
 func (m *Metrics) Handler() http.Handler {
-	expvarInt("gateway_active_requests").Set(0)
+	expvar.NewInt("gateway_active_requests").Set(0)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

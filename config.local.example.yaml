@@ -146,26 +146,6 @@ jwt:
     - "email"
     - "roles"
 
-# Федерация внешней идентичности (партнёрский HS256-JWT).
-# ВАЖНО: identity.providers[].secret_key ОТЛИЧАЕТСЯ от jwt.secret_key.
-# Значения ниже — заглушки; реальные секреты задаются вне публичного репозитория.
-identity:
-  enabled: false
-  selection: []
-  user_lookup:
-    service_url: "http://passport-service:8085"
-    hmac_secret: "change-me"          # = HMAC_SECRET паспорта
-    cache_ttl: 300s
-  providers:
-    - name: "partner"
-      enabled: false
-      algorithm: "HS256"
-      secret_key: "change-me"        # секрет партнёра (≠ jwt.secret_key)
-      validate_exp: true
-      validate_iss: false
-      expected_iss: ""
-      email_claim: "email"
-
 headers:
   strip_authorization: true
   claim_to_header:
