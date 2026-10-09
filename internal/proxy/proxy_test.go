@@ -29,13 +29,28 @@ func signTestToken(claims jwt.MapClaims, secret string) string {
 // than once per test binary).
 func newTestMultiProxy(t *testing.T, authRequired bool) *MultiProxy {
 	t.Helper()
+	return newTestMultiProxyWith(t, authRequired, nil)
+}
+
+// newTestMultiProxyWith собирает MultiProxy и даёт тесту донастроить конфиг
+// до валидации: mutate вызывается на свежем *config.Config, общего состояния
+// между тестами нет.
+func newTestMultiProxyWith(t *testing.T, authRequired bool, mutate func(*config.Config)) *MultiProxy {
+	t.Helper()
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
-			SecretKey:   "test-secret",
-			Algorithm:   "HS256",
-			ValidateExp: true,
-			Required:    authRequired,
+			SecretKey:     "test-secret",
+			Algorithm:     "HS256",
+			ValidateExp:   true,
+			Required:      authRequired,
+			ClaimMappings: []string{"sub"},
 		},
+		Headers: config.HeadersConfig{
+			ClaimToHeader: map[string]string{"sub": "X-User-ID"},
+		},
+	}
+	if mutate != nil {
+		mutate(cfg)
 	}
 	jwtValidator, err := jwtutil.NewJWTValidator(
 		cfg.JWT.SecretKey, cfg.JWT.Algorithm,
