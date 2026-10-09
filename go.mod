@@ -3,7 +3,7 @@ module github.com/basili4-1982/api-gateway
 go 1.25.10
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/nats-io/nats.go v1.52.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
