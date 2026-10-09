@@ -505,6 +505,11 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 
 // modifyRequest модифицирует запрос перед отправкой
 func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetConfig, rule *config.RoutingRule) error {
+	// Identity-заголовки выставляет только gateway: клиент не должен иметь
+	// возможности их подделать. Вычищаем входящие X-User-*/signing-заголовки
+	// до аутентификации, чтобы downstream мог безусловно доверять им.
+	scrubClientIdentityHeaders(r.Header)
+
 	authHeader := r.Header.Get("Authorization")
 
 	// если нет Authorization header — пробуем JWT из cookie
@@ -588,6 +593,20 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 	}
 
 	return nil
+}
+
+// scrubClientIdentityHeaders удаляет identity-заголовки, присланные клиентом.
+// Gateway — единственный, кто вправе их устанавливать (X-User-* и
+// sign_v3-заголовки X-Service-ID/X-Key-ID), поэтому они вычищаются безусловно.
+func scrubClientIdentityHeaders(h http.Header) {
+	for name := range h {
+		canonical := http.CanonicalHeaderKey(name)
+		if strings.HasPrefix(canonical, "X-User-") ||
+			canonical == "X-Service-Id" ||
+			canonical == "X-Key-Id" {
+			h.Del(name)
+		}
+	}
 }
 
 func (mp *MultiProxy) applyClaimHeaders(r *http.Request, claims jwt.MapClaims) {
