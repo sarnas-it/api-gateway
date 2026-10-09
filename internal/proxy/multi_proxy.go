@@ -506,9 +506,10 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 // modifyRequest модифицирует запрос перед отправкой
 func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetConfig, rule *config.RoutingRule) error {
 	// Identity-заголовки выставляет только gateway: клиент не должен иметь
-	// возможности их подделать. Вычищаем входящие X-User-*/signing-заголовки
-	// до аутентификации, чтобы downstream мог безусловно доверять им.
-	scrubClientIdentityHeaders(r.Header)
+	// возможности их подделать. Вычищаем входящие identity-заголовки (как
+	// жёстко заданные X-User-*/signing, так и настроенные под произвольные
+	// имена) до аутентификации, чтобы downstream мог безусловно доверять им.
+	mp.scrubClientIdentityHeaders(r.Header)
 
 	authHeader := r.Header.Get("Authorization")
 
@@ -596,12 +597,30 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 }
 
 // scrubClientIdentityHeaders удаляет identity-заголовки, присланные клиентом.
-// Gateway — единственный, кто вправе их устанавливать (X-User-* и
-// sign_v3-заголовки X-Service-ID/X-Key-ID), поэтому они вычищаются безусловно.
-func scrubClientIdentityHeaders(h http.Header) {
+// Gateway — единственный, кто вправе их устанавливать, поэтому они вычищаются
+// безусловно. Кроме жёстко заданных X-User-*/sign_v3-заголовков учитываются
+// настраиваемые имена (headers.claim_to_header, headers.sign_header,
+// permissions.header_name): иначе клиент подделал бы, например, X-Email или
+// X-Tenant на маршруте без аутентификации либо при отсутствии claim в токене.
+func (mp *MultiProxy) scrubClientIdentityHeaders(h http.Header) {
+	cfg := mp.config.Load()
+	protected := make(map[string]struct{}, len(cfg.Headers.ClaimToHeader)+3)
+	for _, name := range cfg.Headers.ClaimToHeader {
+		if name != "" {
+			protected[http.CanonicalHeaderKey(name)] = struct{}{}
+		}
+	}
+	if cfg.Headers.SignHeader != "" {
+		protected[http.CanonicalHeaderKey(cfg.Headers.SignHeader)] = struct{}{}
+	}
+	if cfg.Permissions.HeaderName != "" {
+		protected[http.CanonicalHeaderKey(cfg.Permissions.HeaderName)] = struct{}{}
+	}
+
 	for name := range h {
 		canonical := http.CanonicalHeaderKey(name)
-		if strings.HasPrefix(canonical, "X-User-") ||
+		if _, ok := protected[canonical]; ok ||
+			strings.HasPrefix(canonical, "X-User-") ||
 			canonical == "X-Service-Id" ||
 			canonical == "X-Key-Id" {
 			h.Del(name)

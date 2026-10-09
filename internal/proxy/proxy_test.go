@@ -31,10 +31,14 @@ func newTestMultiProxy(t *testing.T, authRequired bool) *MultiProxy {
 	t.Helper()
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
-			SecretKey:   "test-secret",
-			Algorithm:   "HS256",
-			ValidateExp: true,
-			Required:    authRequired,
+			SecretKey:     "test-secret",
+			Algorithm:     "HS256",
+			ValidateExp:   true,
+			Required:      authRequired,
+			ClaimMappings: []string{"sub"},
+		},
+		Headers: config.HeadersConfig{
+			ClaimToHeader: map[string]string{"sub": "X-User-ID"},
 		},
 	}
 	jwtValidator, err := jwtutil.NewJWTValidator(

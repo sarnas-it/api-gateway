@@ -56,10 +56,41 @@ func TestModifyRequest_ClientIdentityOverriddenByToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if got := r.Header.Get("X-User-ID"); got == "999" {
-		t.Fatal("client X-User-ID must not survive authentication")
+	if got := r.Header.Get("X-User-ID"); got != "7" {
+		t.Fatalf("X-User-ID must come from the token claim, got %q", got)
 	}
 	if got := r.Header.Get("X-User-Email"); got != "" {
 		t.Fatalf("client X-User-Email must be scrubbed, got %q", got)
+	}
+}
+
+// Identity-заголовки, заданные в конфиге под произвольными именами
+// (claim_to_header, permissions.header_name), тоже вычищаются: иначе клиент
+// подделал бы их на маршруте без аутентификации.
+func TestModifyRequest_ScrubsConfiguredIdentityHeaders(t *testing.T) {
+	mp := newTestMultiProxy(t, false)
+	cfg := mp.config.Load()
+	cfg.Headers.ClaimToHeader = map[string]string{
+		"sub":   "X-User-ID",
+		"email": "X-Email",
+	}
+	cfg.Permissions.HeaderName = "X-Tenant"
+
+	r := httptest.NewRequest("GET", "/api/anything", nil)
+	r.Header.Set("X-Email", "evil@evil.test")
+	r.Header.Set("X-Tenant", "forged")
+	r.Header.Set("X-Real-Header", "keep-me")
+
+	if err := mp.modifyRequest(r, nil, noAuthBlockRule); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, h := range []string{"X-Email", "X-Tenant"} {
+		if v := r.Header.Get(h); v != "" {
+			t.Fatalf("configured identity header %s leaked: %q", h, v)
+		}
+	}
+	if got := r.Header.Get("X-Real-Header"); got != "keep-me" {
+		t.Fatalf("non-identity header must be preserved, got %q", got)
 	}
 }
