@@ -69,12 +69,18 @@ func TestModifyRequest_ClientIdentityOverriddenByToken(t *testing.T) {
 // подделал бы их на маршруте без аутентификации.
 func TestModifyRequest_ScrubsConfiguredIdentityHeaders(t *testing.T) {
 	mp := newTestMultiProxy(t, false)
-	cfg := mp.config.Load()
+	// Правки конфига — на копии, чтобы не мутировать общий указатель
+	// (иначе тест оставляет за собой изменённые значения).
+	base := mp.config.Load()
+	cfg := *base
+	cfg.Headers = base.Headers
 	cfg.Headers.ClaimToHeader = map[string]string{
 		"sub":   "X-User-ID",
 		"email": "X-Email",
 	}
+	cfg.Permissions = base.Permissions
 	cfg.Permissions.HeaderName = "X-Tenant"
+	mp.config.Store(&cfg)
 
 	r := httptest.NewRequest("GET", "/api/anything", nil)
 	r.Header.Set("X-Email", "evil@evil.test")
