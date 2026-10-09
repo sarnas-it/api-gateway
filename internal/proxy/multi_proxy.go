@@ -551,6 +551,9 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 					return fmt.Errorf("missing required role: %s", rule.Auth.RolesAll[0])
 				}
 				mp.applyIdentityHeaders(r, user)
+				// Внешний токен тоже должен подписывать per-route HMAC v3:
+				// admin-backend (sign_v3) отвергает запрос без подписи.
+				mp.applySignV3ForUser(r, strconv.Itoa(user.ID), rule)
 			} else if authRequired {
 				return fmt.Errorf("invalid token: %w", err)
 			} else {
@@ -606,15 +609,20 @@ func (mp *MultiProxy) applyClaimHeaders(r *http.Request, claims jwt.MapClaims) {
 // X-User-Timestamp/X-User-Signature) для внутренних сервисов на go-hmac-auth.
 // Секрет задаётся только в приватном конфиге/на сервере.
 func (mp *MultiProxy) applySignV3(r *http.Request, claims jwt.MapClaims, rule *config.RoutingRule) {
-	if rule == nil || rule.SignV3 == nil || rule.SignV3.ServiceID == "" || rule.SignV3.Secret == "" {
-		return
-	}
 	extracted := jwtutil.ExtractClaims(claims, mp.config.Load().JWT.ClaimMappings)
 	userIDVal, ok := extracted["id"]
 	if !ok {
 		return
 	}
-	userIDStr := fmt.Sprintf("%v", userIDVal)
+	mp.applySignV3ForUser(r, fmt.Sprintf("%v", userIDVal), rule)
+}
+
+// applySignV3ForUser — та же v3-подпись, но с уже известным user id. Нужна
+// внешней идентичности: id резолвится через passport-lookup, а не из claim.
+func (mp *MultiProxy) applySignV3ForUser(r *http.Request, userIDStr string, rule *config.RoutingRule) {
+	if rule == nil || rule.SignV3 == nil || rule.SignV3.ServiceID == "" || rule.SignV3.Secret == "" {
+		return
+	}
 	sig, tsStr := signV3(rule.SignV3.ServiceID, userIDStr, r.Method, r.URL.Path,
 		rule.SignV3.Secret, time.Now().UTC().Unix())
 	r.Header.Set("X-Service-ID", rule.SignV3.ServiceID)

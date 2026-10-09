@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -141,5 +142,75 @@ func TestModifyRequest_ExternalTokenRoleGate(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// TestModifyRequest_ExternalTokenAppliesSignV3 verifies that a resolved
+// external identity also gets the per-route HMAC v3 signature — without it
+// admin-backend routes (sign_v3) reject external tokens with 401.
+func TestModifyRequest_ExternalTokenAppliesSignV3(t *testing.T) {
+	lookupSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":42,"email":"partner@example.com","is_active":true,"roles":["admin"]}}`))
+	}))
+	defer lookupSrv.Close()
+
+	cfg := &config.Config{}
+	cfg.Server.Port = 8080
+	cfg.JWT.SecretKey = "our-secret"
+	cfg.JWT.Algorithm = "HS256"
+	cfg.Targets = []config.TargetConfig{{Name: "api", URL: "http://127.0.0.1:1", Timeout: time.Second}}
+	cfg.Identity = config.IdentityConfig{
+		Enabled: true,
+		UserLookup: config.IdentityUserLookupConfig{
+			ServiceURL: lookupSrv.URL, HMACSecret: "internal-secret", CacheTTL: time.Minute,
+		},
+		Providers: []config.IdentityProviderConfig{{
+			Name: "partner", Enabled: true, Algorithm: "HS256",
+			SecretKey: "partner-secret", ValidateExp: true, EmailClaim: "email",
+		}},
+	}
+
+	mp, err := NewMultiProxy(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"email": "partner@example.com",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	signed, _ := tok.SignedString([]byte("partner-secret"))
+
+	req := httptest.NewRequest("GET", "/api/v1/jobs", nil)
+	req.Header.Set("Authorization", "Bearer "+signed)
+	rule := &config.RoutingRule{
+		PathPrefix: "/api/v1",
+		Auth:       &config.AuthRule{Required: true},
+		SignV3:     &config.SignV3Config{ServiceID: "admin-front", KeyID: "1", Secret: "v3-secret"},
+	}
+
+	if err := mp.modifyRequest(req, &cfg.Targets[0], rule); err != nil {
+		t.Fatalf("modifyRequest error: %v", err)
+	}
+
+	if got := req.Header.Get("X-Service-ID"); got != "admin-front" {
+		t.Fatalf("X-Service-ID: got %q want admin-front", got)
+	}
+	if got := req.Header.Get("X-Key-ID"); got != "1" {
+		t.Fatalf("X-Key-ID: got %q want 1", got)
+	}
+	if got := req.Header.Get("X-User-ID"); got != "42" {
+		t.Fatalf("X-User-ID: got %q want 42", got)
+	}
+
+	tsStr := req.Header.Get("X-User-Timestamp")
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil {
+		t.Fatalf("X-User-Timestamp %q not an int: %v", tsStr, err)
+	}
+	wantSig, _ := signV3("admin-front", "42", "GET", "/api/v1/jobs", "v3-secret", ts)
+	if got := req.Header.Get("X-User-Signature"); got != wantSig {
+		t.Fatalf("X-User-Signature: got %q want %q", got, wantSig)
 	}
 }
