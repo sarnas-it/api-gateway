@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/basili4-1982/api-gateway/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -68,19 +69,15 @@ func TestModifyRequest_ClientIdentityOverriddenByToken(t *testing.T) {
 // (claim_to_header, permissions.header_name), тоже вычищаются: иначе клиент
 // подделал бы их на маршруте без аутентификации.
 func TestModifyRequest_ScrubsConfiguredIdentityHeaders(t *testing.T) {
-	mp := newTestMultiProxy(t, false)
-	// Правки конфига — на копии, чтобы не мутировать общий указатель
-	// (иначе тест оставляет за собой изменённые значения).
-	base := mp.config.Load()
-	cfg := *base
-	cfg.Headers = base.Headers
-	cfg.Headers.ClaimToHeader = map[string]string{
-		"sub":   "X-User-ID",
-		"email": "X-Email",
-	}
-	cfg.Permissions = base.Permissions
-	cfg.Permissions.HeaderName = "X-Tenant"
-	mp.config.Store(&cfg)
+	// Конфиг настраивается до сборки MultiProxy: общего состояния с другими
+	// тестами нет.
+	mp := newTestMultiProxyWith(t, false, func(cfg *config.Config) {
+		cfg.Headers.ClaimToHeader = map[string]string{
+			"sub":   "X-User-ID",
+			"email": "X-Email",
+		}
+		cfg.Permissions.HeaderName = "X-Tenant"
+	})
 
 	r := httptest.NewRequest("GET", "/api/anything", nil)
 	r.Header.Set("X-Email", "evil@evil.test")
