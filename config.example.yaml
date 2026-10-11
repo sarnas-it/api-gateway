@@ -10,11 +10,11 @@ application:
   circuit_breaker: false
 
 permissions:
-  api_key: "b8107b43dc1d1e8314041c6003d12fd28750b8e95185035101823abd19f95e3e"
+  api_key: "change-me"
 
 jwt:
   required: false
-  secret_key: "OFF5tQgiQzgq4TVjExUS5XtCgvYUPF0pbTlWT9XJDgJue6RCPLQ5xZ7GKGUlYE3F"
+  secret_key: "change-me"
   validate_exp: false
   validate_iss: false
   validate_aud: false
@@ -316,8 +316,8 @@ headers:
     email: "X-User-Email"
     roles: "X-User-Roles"
   add_headers:
-    X-API-Key: "b8107b43dc1d1e8314041c6003d12fd28750b8e95185035101823abd19f95e3e"
-    X-User-Signature: "0d2fce0d2617662e56faf187869b57ca2e5bf33bf3f73076d4b6c286b391e091"
+    X-API-Key: "change-me"
+    X-User-Signature: "change-me"
   cors:
     enabled: true
     allowed_origins: ["*"]

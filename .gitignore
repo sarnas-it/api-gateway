@@ -5,6 +5,7 @@
 config.local.yaml
 config.prod.yaml
 config.sarnas.yaml
+config.yaml
 # Config (sensitive data)
 *.crt
 /dist/
