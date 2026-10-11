@@ -27,7 +27,23 @@ const (
 	ctxKeyRemainingPath contextKey = "remaining_path"
 	ctxKeyTargetProxy   contextKey = "target_proxy"
 	ctxKeyRequestBody   contextKey = "request_body"
+	ctxKeyResponseBody  contextKey = "response_body"
 )
+
+// maxAuditBodyBytes — потолок тела (запрос/ответ), сохраняемого в аудит.
+const maxAuditBodyBytes = 64 << 10 // 64 KiB
+
+// responseCapture — mutable-holder тела ответа: кладётся в контекст запроса до
+// проксирования, заполняется в proxyRequest (тело уже буферизуется целиком),
+// читается при сборке события аудита.
+type responseCapture struct{ body []byte }
+
+func (c *responseCapture) set(b []byte) {
+	if len(b) > maxAuditBodyBytes {
+		b = b[:maxAuditBodyBytes]
+	}
+	c.body = b
+}
 
 // ──────── Panic Recovery ────────
 
@@ -289,6 +305,11 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 				r = r.WithContext(context.WithValue(r.Context(), ctxKeyRequestBody, bodyBytes))
 			}
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+
+		// Holder тела ответа для аудита (заполняется в proxyRequest)
+		if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" {
+			r = r.WithContext(context.WithValue(r.Context(), ctxKeyResponseBody, &responseCapture{}))
 		}
 
 		// Publish on_request webhooks
