@@ -599,6 +599,9 @@ func (mp *MultiProxy) proxyRequest(w http.ResponseWriter, r *http.Request, targe
 		zap.String("target", target.config.Name),
 		zap.Int("body_len", len(bodyBytes)),
 	)
+	if rc, ok := r.Context().Value(ctxKeyResponseBody).(*responseCapture); ok {
+		rc.set(bodyBytes)
+	}
 	bytesWritten, writeErr := w.Write(bodyBytes)
 	if writeErr != nil {
 		mp.logger.Error("Failed to write response body",

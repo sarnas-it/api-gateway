@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -14,17 +15,40 @@ import (
 )
 
 type AuditEvent struct {
-	Method      string            `json:"method"`
-	Path        string            `json:"path"`
-	Query       string            `json:"query,omitempty"`
-	UserID      string            `json:"user_id,omitempty"`
-	UserEmail   string            `json:"user_email,omitempty"`
-	UserRoles   string            `json:"user_roles,omitempty"`
-	RequestID   string            `json:"request_id"`
-	StatusCode  int               `json:"status_code,omitempty"`
-	Timestamp   time.Time         `json:"timestamp"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	Changes     json.RawMessage   `json:"changes,omitempty"`
+	Method     string            `json:"method"`
+	Path       string            `json:"path"`
+	Query      string            `json:"query,omitempty"`
+	UserID     string            `json:"user_id,omitempty"`
+	UserEmail  string            `json:"user_email,omitempty"`
+	UserRoles  string            `json:"user_roles,omitempty"`
+	RequestID  string            `json:"request_id"`
+	StatusCode int               `json:"status_code,omitempty"`
+	Timestamp  time.Time         `json:"timestamp"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Changes    json.RawMessage   `json:"changes,omitempty"`
+	// IP и UserAgent — откуда пришёл запрос (аудит).
+	IP        string `json:"ip,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
+	// ResponseBody — тело ответа апстрима (нужно для вывода id созданного
+	// объекта на стороне audit-consumer).
+	ResponseBody json.RawMessage `json:"response_body,omitempty"`
+}
+
+// clientIPFromRequest возвращает клиентский IP: первый валидный адрес из
+// X-Forwarded-For, иначе хост из RemoteAddr.
+func clientIPFromRequest(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			if ip := net.ParseIP(strings.TrimSpace(part)); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 type Publisher struct {
@@ -125,6 +149,12 @@ func (p *Publisher) buildEvent(r *http.Request, statusCode int) AuditEvent {
 		Timestamp:  time.Now(),
 		StatusCode: statusCode,
 		Headers:    make(map[string]string),
+		IP:         clientIPFromRequest(r),
+		UserAgent:  r.UserAgent(),
+	}
+
+	if rc, ok := r.Context().Value(ctxKeyResponseBody).(*responseCapture); ok && len(rc.body) > 0 {
+		e.ResponseBody = json.RawMessage(rc.body)
 	}
 
 	if id := r.Header.Get("X-User-ID"); id != "" {
