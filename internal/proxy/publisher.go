@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -29,10 +30,30 @@ type AuditEvent struct {
 	// ResponseBody — тело ответа (только JSON, с ограничением размера).
 	// Публикуется, если у вебхука включён include_response_body.
 	ResponseBody json.RawMessage `json:"response_body,omitempty"`
+	// IP и UserAgent — откуда пришёл запрос (аудит).
+	IP        string `json:"ip,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
 }
 
 // defaultMaxResponseBodyBytes — потолок захвата тела ответа для публикации.
 const defaultMaxResponseBodyBytes = 64 << 10 // 64 KiB
+
+// clientIPFromRequest возвращает клиентский IP: первый валидный адрес из
+// X-Forwarded-For, иначе хост из RemoteAddr.
+func clientIPFromRequest(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			if ip := net.ParseIP(strings.TrimSpace(part)); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
 
 type Publisher struct {
 	nc       *nats.Conn
@@ -159,6 +180,8 @@ func (p *Publisher) buildEvent(r *http.Request, statusCode int, wh config.Webhoo
 		Timestamp:  time.Now(),
 		StatusCode: statusCode,
 		Headers:    make(map[string]string),
+		IP:         clientIPFromRequest(r),
+		UserAgent:  r.UserAgent(),
 	}
 
 	if id := r.Header.Get("X-User-ID"); id != "" {

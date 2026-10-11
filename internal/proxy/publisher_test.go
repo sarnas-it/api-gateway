@@ -38,3 +38,30 @@ func TestDoWebhook_DeliversDespiteCanceledContext(t *testing.T) {
 		t.Fatal("webhook not delivered with a canceled request context")
 	}
 }
+
+func TestBuildEventIPAndUserAgent(t *testing.T) {
+	r := httptest.NewRequest("POST", "/api/x", nil)
+	r = r.WithContext(ctxRequest(httptest.NewRecorder(), "r1", nil, nil, ""))
+	r.RemoteAddr = "10.1.2.3:5555"
+	r.Header.Set("X-Forwarded-For", "203.0.113.7, 10.1.2.3")
+	r.Header.Set("User-Agent", "test-agent/1.0")
+
+	ev := (&Publisher{}).buildEvent(r, 200, config.WebhookConfig{})
+	if ev.IP != "203.0.113.7" {
+		t.Fatalf("IP = %q, want 203.0.113.7", ev.IP)
+	}
+	if ev.UserAgent != "test-agent/1.0" {
+		t.Fatalf("UserAgent = %q", ev.UserAgent)
+	}
+}
+
+func TestBuildEventIPFallbackRemoteAddr(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/x", nil)
+	r = r.WithContext(ctxRequest(httptest.NewRecorder(), "r1", nil, nil, ""))
+	r.RemoteAddr = "10.1.2.3:5555"
+
+	ev := (&Publisher{}).buildEvent(r, 200, config.WebhookConfig{})
+	if ev.IP != "10.1.2.3" {
+		t.Fatalf("IP = %q, want 10.1.2.3", ev.IP)
+	}
+}
