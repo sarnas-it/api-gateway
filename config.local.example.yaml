@@ -172,6 +172,11 @@ identity:
       validate_iss: false
       expected_iss: ""
       email_claim: "email"
+      # Резолв по субъекту: passport GET /api/v1/internal/user-by-subject
+      # (provider=<subject_provider>, subject=<sub из токена>), фолбэк — email.
+      # subject_provider — значение auth_provider в passport; пусто = выключено.
+      # subject_provider: "cml"
+      # subject_claim: "sub"
 
 headers:
   strip_authorization: true

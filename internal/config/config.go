@@ -248,16 +248,18 @@ type IdentityUserLookupConfig struct {
 
 // IdentityProviderConfig — один доверенный внешний JWT-провайдер
 type IdentityProviderConfig struct {
-	Name          string `yaml:"name"`
-	Enabled       bool   `yaml:"enabled"`
-	Issuer        string `yaml:"issuer"`
-	Algorithm     string `yaml:"algorithm"`
-	PublicKeyFile string `yaml:"public_key_file"`
-	SecretKey     string `yaml:"secret_key"`
-	ValidateExp   bool   `yaml:"validate_exp"`
-	ValidateIss   bool   `yaml:"validate_iss"`
-	ExpectedIss   string `yaml:"expected_iss"`
-	EmailClaim    string `yaml:"email_claim"`
+	Name            string `yaml:"name"`
+	Enabled         bool   `yaml:"enabled"`
+	Issuer          string `yaml:"issuer"`
+	Algorithm       string `yaml:"algorithm"`
+	PublicKeyFile   string `yaml:"public_key_file"`
+	SecretKey       string `yaml:"secret_key"`
+	ValidateExp     bool   `yaml:"validate_exp"`
+	ValidateIss     bool   `yaml:"validate_iss"`
+	ExpectedIss     string `yaml:"expected_iss"`
+	EmailClaim      string `yaml:"email_claim"`
+	SubjectClaim    string `yaml:"subject_claim"`
+	SubjectProvider string `yaml:"subject_provider"`
 }
 
 // HeadersConfig конфигурация заголовков
@@ -606,6 +608,9 @@ func (c *Config) setDefaults() {
 		}
 		if c.Identity.Providers[i].EmailClaim == "" {
 			c.Identity.Providers[i].EmailClaim = "email"
+		}
+		if c.Identity.Providers[i].SubjectClaim == "" {
+			c.Identity.Providers[i].SubjectClaim = "sub"
 		}
 	}
 
