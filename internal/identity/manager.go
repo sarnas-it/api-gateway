@@ -13,9 +13,11 @@ import (
 )
 
 type provider struct {
-	name       string
-	validator  *jwtutil.JWTValidator
-	emailClaim string
+	name            string
+	validator       *jwtutil.JWTValidator
+	emailClaim      string
+	subjectClaim    string
+	subjectProvider string
 }
 
 // Manager перебирает доверенные внешние провайдеры и резолвит нашего пользователя.
@@ -55,6 +57,9 @@ func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error)
 		if len(cfg.Selection) > 0 && !selected[pc.Name] {
 			continue
 		}
+		if pc.SubjectClaim == "" {
+			pc.SubjectClaim = "sub"
+		}
 		v, err := jwtutil.NewJWTValidator(
 			pc.SecretKey, pc.Algorithm,
 			pc.ValidateExp, pc.ValidateIss, pc.ExpectedIss,
@@ -63,7 +68,13 @@ func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error)
 		if err != nil {
 			return nil, fmt.Errorf("identity provider %s: %w", pc.Name, err)
 		}
-		providers = append(providers, provider{name: pc.Name, validator: v, emailClaim: pc.EmailClaim})
+		providers = append(providers, provider{
+			name:            pc.Name,
+			validator:       v,
+			emailClaim:      pc.EmailClaim,
+			subjectClaim:    pc.SubjectClaim,
+			subjectProvider: pc.SubjectProvider,
+		})
 	}
 
 	if len(providers) == 0 {
@@ -86,6 +97,20 @@ func (m *Manager) Resolve(ctx context.Context, token string) (*User, error) {
 		}
 		if err := p.validator.ValidateClaims(claims); err != nil {
 			continue
+		}
+
+		if p.subjectProvider != "" {
+			if sub, _ := claims[p.subjectClaim].(string); strings.TrimSpace(sub) != "" {
+				user, found, err := m.resolver.bySubject(ctx, p.subjectProvider, sub)
+				if err != nil {
+					m.logger.Warn("identity: subject lookup failed",
+						zap.String("provider", p.name), zap.Error(err))
+				} else if found && user != nil && user.IsActive {
+					m.logger.Info("identity: external token resolved by subject",
+						zap.String("provider", p.name), zap.Int("user_id", user.ID))
+					return user, nil
+				}
+			}
 		}
 
 		email, _ := claims[p.emailClaim].(string)

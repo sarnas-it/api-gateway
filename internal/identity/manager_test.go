@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -200,5 +201,113 @@ func TestNewManager_UnknownSelectionWarns(t *testing.T) {
 	}
 	if got := logs.FilterMessage("identity: selection entry does not match an enabled provider").Len(); got != 1 {
 		t.Fatalf("expected one warning for unknown selection entry, got %d: %v", got, logs.All())
+	}
+}
+
+func TestResolve_BySubjectFirst(t *testing.T) {
+	var subjectCalls, emailCalls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/internal/user-by-subject" {
+			atomic.AddInt32(&subjectCalls, 1)
+			if r.URL.Query().Get("provider") == "cml" && r.URL.Query().Get("subject") == "uuid-1" {
+				_, _ = w.Write([]byte(`{"data":{"id":42,"email":"active@example.com","full_name":"A","is_active":true,"roles":["viewer"]}}`))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		atomic.AddInt32(&emailCalls, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := managerCfg(srv.URL)
+	cfg.Providers[0].SubjectProvider = "cml"
+	m, err := NewManager(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	token := signHS256(t, "partner-secret", jwt.MapClaims{
+		"sub": "uuid-1", "email": "stale@example.com", "exp": time.Now().Add(time.Hour).Unix(),
+	})
+	u, err := m.Resolve(context.Background(), token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.ID != 42 {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+	if atomic.LoadInt32(&emailCalls) != 0 {
+		t.Fatal("email fallback must not be called when subject lookup succeeds")
+	}
+	if atomic.LoadInt32(&subjectCalls) != 1 {
+		t.Fatalf("expected exactly one subject call, got %d", subjectCalls)
+	}
+}
+
+func TestResolve_SubjectMissFallsBackToEmail(t *testing.T) {
+	var subjectCalls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/internal/user-by-subject" {
+			atomic.AddInt32(&subjectCalls, 1)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Query().Get("email") == "active@example.com" {
+			_, _ = w.Write([]byte(`{"data":{"id":42,"email":"active@example.com","full_name":"A","is_active":true,"roles":["viewer"]}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := managerCfg(srv.URL)
+	cfg.Providers[0].SubjectProvider = "cml"
+	m, err := NewManager(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	token := signHS256(t, "partner-secret", jwt.MapClaims{
+		"sub": "unknown-uuid", "email": "active@example.com", "exp": time.Now().Add(time.Hour).Unix(),
+	})
+	u, err := m.Resolve(context.Background(), token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.ID != 42 {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+	if atomic.LoadInt32(&subjectCalls) != 1 {
+		t.Fatalf("expected one subject attempt, got %d", subjectCalls)
+	}
+}
+
+func TestResolve_SubjectLookupDisabledWithoutSubjectProvider(t *testing.T) {
+	var subjectCalls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/internal/user-by-subject" {
+			atomic.AddInt32(&subjectCalls, 1)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":42,"email":"active@example.com","full_name":"A","is_active":true,"roles":["viewer"]}}`))
+	}))
+	defer srv.Close()
+
+	m, err := NewManager(managerCfg(srv.URL), zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	token := signHS256(t, "partner-secret", jwt.MapClaims{
+		"sub": "uuid-1", "email": "active@example.com", "exp": time.Now().Add(time.Hour).Unix(),
+	})
+	if _, err := m.Resolve(context.Background(), token); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if atomic.LoadInt32(&subjectCalls) != 0 {
+		t.Fatal("subject endpoint must not be called without subject_provider")
 	}
 }
