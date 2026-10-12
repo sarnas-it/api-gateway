@@ -61,15 +61,22 @@ func newLookupClient(baseURL, secret string) *lookupClient {
 	}
 }
 
-func (c *lookupClient) fetch(ctx context.Context, email string) (*User, error) {
-	const path = "/api/v1/internal/user-by-email"
+func (c *lookupClient) fetchByEmail(ctx context.Context, email string) (*User, error) {
+	return c.doFetch(ctx, "/api/v1/internal/user-by-email", url.Values{"email": []string{email}})
+}
 
+func (c *lookupClient) fetchBySubject(ctx context.Context, provider, subject string) (*User, error) {
+	return c.doFetch(ctx, "/api/v1/internal/user-by-subject", url.Values{
+		"provider": []string{provider},
+		"subject":  []string{subject},
+	})
+}
+
+func (c *lookupClient) doFetch(ctx context.Context, path string, q url.Values) (*User, error) {
 	u, err := url.Parse(c.baseURL + path)
 	if err != nil {
 		return nil, fmt.Errorf("parse lookup url: %w", err)
 	}
-	q := u.Query()
-	q.Set("email", email)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -133,20 +140,20 @@ func newLookupCache(ttl time.Duration) *lookupCache {
 	return &lookupCache{store: make(map[string]cacheEntry), ttl: ttl}
 }
 
-func (c *lookupCache) get(email string) (*User, bool) {
+func (c *lookupCache) get(key string) (*User, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	e, ok := c.store[email]
+	e, ok := c.store[key]
 	if !ok || time.Now().After(e.expiresAt) {
 		return nil, false
 	}
 	return e.user, true
 }
 
-func (c *lookupCache) set(email string, u *User) {
+func (c *lookupCache) set(key string, u *User) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.store[email] = cacheEntry{user: u, expiresAt: time.Now().Add(c.ttl)}
+	c.store[key] = cacheEntry{user: u, expiresAt: time.Now().Add(c.ttl)}
 }
 
 type resolver struct {
@@ -163,18 +170,30 @@ func newResolver(cfg config.IdentityUserLookupConfig) *resolver {
 
 // byEmail возвращает (user, found, error). found=false при 404 или кэш-промахе.
 func (r *resolver) byEmail(ctx context.Context, email string) (*User, bool, error) {
-	if u, ok := r.cache.get(email); ok {
+	return r.byKey(ctx, "e:"+email, func() (*User, error) {
+		return r.client.fetchByEmail(ctx, email)
+	})
+}
+
+func (r *resolver) bySubject(ctx context.Context, provider, subject string) (*User, bool, error) {
+	return r.byKey(ctx, "s:"+provider+":"+subject, func() (*User, error) {
+		return r.client.fetchBySubject(ctx, provider, subject)
+	})
+}
+
+func (r *resolver) byKey(ctx context.Context, key string, fetch func() (*User, error)) (*User, bool, error) {
+	if u, ok := r.cache.get(key); ok {
 		if u == nil {
 			return nil, false, nil
 		}
 		return u, true, nil
 	}
 
-	u, err := r.client.fetch(ctx, email)
+	u, err := fetch()
 	if err != nil {
 		return nil, false, err
 	}
-	r.cache.set(email, u) // u может быть nil — негативное кэширование
+	r.cache.set(key, u) // u может быть nil — негативное кэширование
 	if u == nil {
 		return nil, false, nil
 	}

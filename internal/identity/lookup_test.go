@@ -50,7 +50,7 @@ func TestLookupClient_FetchFound(t *testing.T) {
 	defer srv.Close()
 
 	c := newLookupClient(srv.URL, "internal-secret")
-	u, err := c.fetch(context.Background(), "partner@example.com")
+	u, err := c.fetchByEmail(context.Background(), "partner@example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestLookupClient_TrailingSlashBaseURL(t *testing.T) {
 	defer srv.Close()
 
 	c := newLookupClient(srv.URL+"/", "internal-secret")
-	u, err := c.fetch(context.Background(), "partner@example.com")
+	u, err := c.fetchByEmail(context.Background(), "partner@example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestLookupClient_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := newLookupClient(srv.URL, "internal-secret")
-	u, err := c.fetch(context.Background(), "nobody@example.com")
+	u, err := c.fetchByEmail(context.Background(), "nobody@example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,5 +147,51 @@ func config0(serviceURL string) config.IdentityUserLookupConfig {
 		ServiceURL: serviceURL,
 		HMACSecret: "internal-secret",
 		CacheTTL:   time.Minute,
+	}
+}
+
+func TestLookupClient_FetchBySubject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/internal/user-by-subject" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("provider") != "cml" || r.URL.Query().Get("subject") != "uuid-1" {
+			t.Errorf("unexpected query %s", r.URL.RawQuery)
+		}
+		uid := r.Header.Get(hmacUserIDHeader)
+		sig := r.Header.Get(hmacSignatureHeader)
+		ts := r.Header.Get(hmacTimestampHeader)
+		if !verifyHMACV2(uid, r.Method, r.URL.Path, ts, sig, "internal-secret", time.Now()) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":10,"email":"cml@example.com","full_name":"CML","is_active":true,"roles":["viewer"]}}`))
+	}))
+	defer srv.Close()
+
+	c := newLookupClient(srv.URL, "internal-secret")
+	u, err := c.fetchBySubject(context.Background(), "cml", "uuid-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 10 || u.Email != "cml@example.com" || !u.IsActive {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+}
+
+func TestLookupClient_FetchBySubject_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newLookupClient(srv.URL, "internal-secret")
+	u, err := c.fetchBySubject(context.Background(), "cml", "unknown")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u != nil {
+		t.Fatalf("expected nil user, got %+v", u)
 	}
 }
