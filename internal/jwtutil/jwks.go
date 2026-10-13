@@ -25,6 +25,11 @@ const (
 	jwksHTTPTimeout = 5 * time.Second
 	// jwksMaxBodySize — предел размера ответа JWKS.
 	jwksMaxBodySize = 1 << 20
+	// jwksUnknownKidCooldown — окно, в течение которого повторные проверки с
+	// тем же неизвестным kid не инициируют новое принудительное обновление.
+	jwksUnknownKidCooldown = 30 * time.Second
+	// jwksNegativeCacheMax — предел размера negative-кэша неизвестных kid.
+	jwksNegativeCacheMax = 1024
 )
 
 // jwk — отдельный ключ JWK (RFC 7517/7518). Поддерживаются RSA и EC.
@@ -67,15 +72,24 @@ func (s *jwksKeys) selectKey(kid string) (interface{}, bool) {
 	return k, ok
 }
 
-// jwksCache — потокобезопасный кэш JWK Set с TTL и принудительным обновлением.
+// jwksCache — потокобезопасный кэш JWK Set с TTL, дедупликацией сетевых
+// запросов и negative-кэшем неизвестных kid.
 type jwksCache struct {
 	url    string
 	client *http.Client
 	logger *zap.Logger
 
+	// fetchMu сериализует сетевые запросы за JWKS: одновременно выполняется не
+	// более одного. Он НЕ удерживается при чтении кэша, поэтому валидные
+	// запросы с актуальным набором не блокируются обновлением.
+	fetchMu sync.Mutex
+
 	mu        sync.RWMutex
 	keys      *jwksKeys
 	expiresAt time.Time
+	gen       uint64               // растёт после каждой попытки загрузки
+	lastErr   error                // результат последней неудачной попытки
+	neg       map[string]time.Time // kid -> до какого времени не форсить refresh
 }
 
 func newJWKSCache(url string, logger *zap.Logger) *jwksCache {
@@ -86,66 +100,129 @@ func newJWKSCache(url string, logger *zap.Logger) *jwksCache {
 		url:    url,
 		client: &http.Client{Timeout: jwksHTTPTimeout},
 		logger: logger,
+		neg:    make(map[string]time.Time),
 	}
 }
 
 // key возвращает публичный ключ для проверки подписи. При неизвестном kid
-// выполняется одно принудительное обновление набора (поддержка ротации ключей).
+// выполняется не более одной принудительной попытки обновления (поддержка
+// ротации ключей); повторные попытки для того же kid в пределах cooldown-окна
+// подавляются. Сетевые запросы дедуплицируются между горутинами.
 func (c *jwksCache) key(kid string) (interface{}, error) {
-	keys, err := c.get(false)
-	if err == nil {
-		if k, ok := keys.selectKey(kid); ok {
+	keys, err := c.ensureLoaded(false)
+	if err != nil {
+		return nil, err
+	}
+	if k, ok := keys.selectKey(kid); ok {
+		return k, nil
+	}
+
+	if c.unknownKidCoolingDown(kid) {
+		return nil, fmt.Errorf("jwks: no key for kid %q", kid)
+	}
+
+	refreshed, refreshErr := c.ensureLoaded(true)
+	if refreshErr == nil {
+		if k, ok := refreshed.selectKey(kid); ok {
 			return k, nil
 		}
 	}
-
-	refreshed, refreshErr := c.get(true)
-	if refreshErr != nil {
-		if err != nil {
-			return nil, err
-		}
-		return nil, refreshErr
-	}
-	if k, ok := refreshed.selectKey(kid); ok {
-		return k, nil
-	}
+	c.markUnknownKid(kid)
 	return nil, fmt.Errorf("jwks: no key for kid %q", kid)
 }
 
-func (c *jwksCache) get(force bool) (*jwksKeys, error) {
+// ensureLoaded возвращает набор ключей из кэша, при необходимости загружая его.
+// force=true инициирует загрузку даже при свежем кэше (ротация по kid).
+//
+// Дедупликация: параллельные вызовы разделяют один сетевой запрос через
+// сериализацию fetchMu + счётчик поколений gen. При холодном кэше (ключей нет)
+// выполняется ровно одна попытка загрузки, даже при ошибке — второй попытки в
+// рамках одного вызова не делается.
+func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 	c.mu.RLock()
-	if !force && c.keys != nil && time.Now().Before(c.expiresAt) {
-		keys := c.keys
-		c.mu.RUnlock()
+	keys := c.keys
+	fresh := keys != nil && time.Now().Before(c.expiresAt)
+	gen := c.gen
+	c.mu.RUnlock()
+
+	if fresh && !force {
 		return keys, nil
 	}
+
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
+
+	// Пока ждали fetchMu, другой вызов мог уже сходить за JWKS.
+	c.mu.RLock()
+	keys = c.keys
+	fresh = keys != nil && time.Now().Before(c.expiresAt)
+	curGen := c.gen
+	lastErr := c.lastErr
 	c.mu.RUnlock()
-	return c.refresh(force)
-}
 
-func (c *jwksCache) refresh(force bool) (*jwksKeys, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !force && c.keys != nil && time.Now().Before(c.expiresAt) {
-		return c.keys, nil
+	if curGen != gen {
+		// Кто-то завершил загрузку после нашей выборки — переиспользуем результат.
+		if keys != nil {
+			return keys, nil
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
 	}
 
-	keys, err := c.fetch()
+	if fresh && !force {
+		return keys, nil
+	}
+
+	newKeys, err := c.fetch()
 	if err != nil {
-		if c.keys != nil {
+		c.mu.Lock()
+		c.gen++
+		c.lastErr = err
+		c.mu.Unlock()
+		if keys != nil {
 			c.logger.Warn("jwks: refresh failed, using cached keys",
 				zap.String("url", c.url), zap.Error(err))
-			return c.keys, nil
+			return keys, nil
 		}
 		return nil, err
 	}
 
-	c.keys = keys
+	c.mu.Lock()
+	c.keys = newKeys
 	c.expiresAt = time.Now().Add(jwksCacheTTL)
+	c.gen++
+	c.lastErr = nil
+	c.mu.Unlock()
+
 	c.logger.Debug("jwks: keys loaded",
-		zap.String("url", c.url), zap.Int("keys", len(keys.byKid)))
-	return keys, nil
+		zap.String("url", c.url), zap.Int("keys", len(newKeys.byKid)))
+	return newKeys, nil
+}
+
+// unknownKidCoolingDown сообщает, что для kid недавно уже была неудачная
+// принудительная попытка и новую делать не нужно.
+func (c *jwksCache) unknownKidCoolingDown(kid string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	until, ok := c.neg[kid]
+	if !ok {
+		return false
+	}
+	if time.Now().Before(until) {
+		return true
+	}
+	delete(c.neg, kid)
+	return false
+}
+
+func (c *jwksCache) markUnknownKid(kid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.neg) >= jwksNegativeCacheMax {
+		c.neg = make(map[string]time.Time)
+	}
+	c.neg[kid] = time.Now().Add(jwksUnknownKidCooldown)
 }
 
 func (c *jwksCache) fetch() (*jwksKeys, error) {
