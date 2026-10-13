@@ -254,6 +254,7 @@ type IdentityProviderConfig struct {
 	Algorithm       string `yaml:"algorithm"`
 	PublicKeyFile   string `yaml:"public_key_file"`
 	SecretKey       string `yaml:"secret_key"`
+	JwksURL         string `yaml:"jwks_url"`
 	ValidateExp     bool   `yaml:"validate_exp"`
 	ValidateIss     bool   `yaml:"validate_iss"`
 	ExpectedIss     string `yaml:"expected_iss"`
@@ -840,13 +841,22 @@ func (c *Config) validate() error {
 			if len(p.Algorithm) < 2 {
 				return fmt.Errorf("identity provider %s: invalid algorithm %q", p.Name, p.Algorithm)
 			}
+			algPrefix := strings.ToUpper(p.Algorithm[:2])
+			// jwks_url — только для асимметричных RS*/ES*: по JWK-набору
+			// нельзя проверить HMAC-подпись (секрет не публикуется).
+			if p.JwksURL != "" && algPrefix != "RS" && algPrefix != "ES" {
+				return fmt.Errorf("identity provider %s: jwks_url requires RS* or ES* algorithm", p.Name)
+			}
 			// Инвариант разделения секретов: партнёрский HMAC-секрет не должен
 			// совпадать с нашими, иначе партнёрский токен прошёл бы как наш.
-			if strings.HasPrefix(strings.ToUpper(p.Algorithm), "HS") {
-				if p.SecretKey != "" && p.SecretKey == c.JWT.SecretKey {
+			if algPrefix == "HS" {
+				if p.SecretKey == "" {
+					return fmt.Errorf("identity provider %s: secret_key is required for HS* algorithm", p.Name)
+				}
+				if p.SecretKey == c.JWT.SecretKey {
 					return fmt.Errorf("identity provider %s: secret_key must differ from jwt.secret_key", p.Name)
 				}
-				if p.SecretKey != "" && p.SecretKey == c.Permissions.APIKey {
+				if p.SecretKey == c.Permissions.APIKey {
 					return fmt.Errorf("identity provider %s: secret_key must differ from permissions.api_key", p.Name)
 				}
 			}

@@ -1275,3 +1275,82 @@ identity:
 		t.Fatalf("distinct secrets must be accepted, got: %v", err)
 	}
 }
+
+func TestLoad_IdentityJwksURLAccepted(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "cml"
+      enabled: true
+      algorithm: "RS256"
+      jwks_url: "https://cml/.well-known/jwks"
+      email_claim: "email"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("RS256 + jwks_url must be accepted, got: %v", err)
+	}
+	if cfg.Identity.Providers[0].JwksURL != "https://cml/.well-known/jwks" {
+		t.Fatalf("unexpected jwks_url: %q", cfg.Identity.Providers[0].JwksURL)
+	}
+}
+
+func TestLoad_IdentityJwksURLWithHSRejected(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "cml"
+      enabled: true
+      algorithm: "HS256"
+      secret_key: "partner-secret"
+      jwks_url: "https://cml/.well-known/jwks"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for HS256 with jwks_url")
+	}
+	if !strings.Contains(err.Error(), "cml") || !strings.Contains(err.Error(), "jwks_url") {
+		t.Fatalf("error must name the provider and jwks_url, got: %v", err)
+	}
+}
+
+func TestLoad_IdentityHSProviderWithoutSecretKeyRejected(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+identity:
+  enabled: true
+  user_lookup:
+    service_url: "http://passport:8085"
+    hmac_secret: "internal-secret"
+  providers:
+    - name: "partner"
+      enabled: true
+      algorithm: "HS256"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for HS* provider without secret_key")
+	}
+	if !strings.Contains(err.Error(), "secret_key") {
+		t.Fatalf("error must mention secret_key, got: %v", err)
+	}
+}

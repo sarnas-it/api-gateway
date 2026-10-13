@@ -24,6 +24,7 @@ var (
 type JWTValidator struct {
 	secretKey   []byte
 	publicKey   interface{}
+	jwks        *jwksCache
 	algorithm   string
 	validateExp bool
 	validateIss bool
@@ -137,6 +138,10 @@ func (v *JWTValidator) withValidOptions() []jwt.ParserOption {
 
 // keyFunc возвращает ключ для проверки подписи
 func (v *JWTValidator) keyFunc(token *jwt.Token) (interface{}, error) {
+	if v.jwks != nil {
+		kid, _ := token.Header["kid"].(string)
+		return v.jwks.key(kid)
+	}
 	switch {
 	case v.secretKey != nil:
 		return v.secretKey, nil
