@@ -168,6 +168,8 @@ identity:
       enabled: false
       algorithm: "HS256"
       secret_key: "change-me"        # секрет партнёра (≠ jwt.secret_key)
+      # RS256 через удалённый JWKS (альтернатива secret_key/public_key_file):
+      # jwks_url: "https://cml/.well-known/jwks"
       validate_exp: true
       validate_iss: false
       expected_iss: ""

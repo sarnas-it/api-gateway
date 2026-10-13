@@ -60,11 +60,23 @@ func NewManager(cfg config.IdentityConfig, logger *zap.Logger) (*Manager, error)
 		if pc.SubjectClaim == "" {
 			pc.SubjectClaim = "sub"
 		}
-		v, err := jwtutil.NewJWTValidator(
-			pc.SecretKey, pc.Algorithm,
-			pc.ValidateExp, pc.ValidateIss, pc.ExpectedIss,
-			false, "", pc.PublicKeyFile,
+		var (
+			v   *jwtutil.JWTValidator
+			err error
 		)
+		if pc.JwksURL != "" {
+			v, err = jwtutil.NewJWKSValidator(
+				pc.JwksURL, pc.Algorithm,
+				pc.ValidateExp, pc.ValidateIss, pc.ExpectedIss,
+				logger,
+			)
+		} else {
+			v, err = jwtutil.NewJWTValidator(
+				pc.SecretKey, pc.Algorithm,
+				pc.ValidateExp, pc.ValidateIss, pc.ExpectedIss,
+				false, "", pc.PublicKeyFile,
+			)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("identity provider %s: %w", pc.Name, err)
 		}
