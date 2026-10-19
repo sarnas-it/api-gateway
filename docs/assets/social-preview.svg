@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <rect width="1280" height="640" fill="#0f172a"/>
+  <text x="80" y="170" font-family="DejaVu Sans, Arial, sans-serif" font-size="72" font-weight="700" fill="#f8fafc">api-gateway</text>
+  <text x="80" y="235" font-family="DejaVu Sans, Arial, sans-serif" font-size="34" fill="#94a3b8">Go gateway with built-in JWT, RBAC, rate limiting</text>
+  <text x="80" y="420" font-family="DejaVu Sans, Arial, sans-serif" font-size="150" font-weight="700" fill="#34d399">-15%</text>
+  <text x="80" y="475" font-family="DejaVu Sans, Arial, sans-serif" font-size="30" fill="#cbd5e1">throughput cost of built-in JWT</text>
+  <text x="680" y="420" font-family="DejaVu Sans, Arial, sans-serif" font-size="150" font-weight="700" fill="#f87171">-90%</text>
+  <text x="680" y="475" font-family="DejaVu Sans, Arial, sans-serif" font-size="30" fill="#cbd5e1">external auth_request / forwardAuth</text>
+  <text x="80" y="580" font-family="DejaVu Sans, Arial, sans-serif" font-size="26" fill="#64748b">github.com/sarnas-it/api-gateway</text>
+</svg>
