@@ -1,6 +1,74 @@
 # API Gateway
 
-Реверс-прокси / API-шлюз с JWT-аутентификацией по маршрутам, ролевым доступом и рейт-лимитингом.
+[![CI](https://github.com/sarnas-it/api-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/sarnas-it/api-gateway/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](go.mod)
+
+**Лёгкий API-шлюз на Go со встроенными JWT, RBAC и rate limiting.** Один бинарник
+(или образ `scratch`), один YAML-конфиг, никаких плагинов и отдельного
+auth-сервиса. Работает в проде на [sarnas.ru](https://sarnas.ru).
+
+English version: [README.en.md](README.en.md)
+
+| Что измерили | `api-gateway` | Nginx / Traefik / Envoy / Kong |
+|---|---:|---:|
+| Проксирование, c300 | **24 068 req/s** | 24 811 – 27 216 req/s |
+| Цена встроенного JWT | **−15.1 %** | Envoy −19.7 %, Kong −28.9 % |
+| Внешняя синхронная аутентификация | — | Nginx `auth_request` −89.5 %, Traefik `forwardAuth` −93.8 % |
+| Пик памяти, c300 | 121.5 MiB | 15.8 – 314.1 MiB |
+
+Методология, конфиги и скрипты воспроизведения —
+[в отчёте о бенчмарке](benchmarks/2026-09-gateway-comparison/README.md).
+Числа получены на проксировании мгновенного backend без TLS, разброс между
+прогонами около ±10 %: сравнивайте относительные разрывы, не абсолютные значения.
+
+## Запуск за минуту
+
+```bash
+# 1. Любой backend на :9000
+docker run -d --rm --network host --name echo traefik/whoami --port 9000
+
+# 2. Конфиг: один таргет, один маршрут
+cat > config.yaml <<'YAML'
+application:
+  env: "dev"
+server:
+  port: 8080
+targets:
+  - name: "echo"
+    url: "http://127.0.0.1:9000"
+    timeout: 5s
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: "echo"
+jwt:
+  secret_key: "change-me-to-a-secure-secret-at-least-256-bits-long"
+  required: false   # JWT включается per-route, см. docs/api-gateway-scenarios.md
+YAML
+
+# 3. Шлюз
+git clone https://github.com/sarnas-it/api-gateway && cd api-gateway
+docker build -t api-gateway .
+docker run -d --rm --network host --name gw \
+  -v $(pwd)/../config.yaml:/etc/proxy/config.yaml:ro \
+  api-gateway
+
+curl -i localhost:8080/   # ответ whoami, проксированный шлюзом
+```
+
+Разбор запуска, JWT и роли — в
+[быстром старте](docs/api-gateway-quickstart.md).
+
+## Когда он подойдёт, а когда нет
+
+Подойдёт, если нужен небольшой шлюз перед несколькими сервисами: JWT и роли на
+уровне маршрута, rate limiting, circuit breaker, взвешенная балансировка и
+service discovery по labels Docker/Podman.
+
+Не подойдёт, если вам нужен Kubernetes Ingress/Gateway API, плагинная экосистема
+уровня Kong, TLS-терминация с автоматическими сертификатами или gRPC-специфичные
+функции. Для этого берите Traefik, Envoy или Kong.
 
 ## Возможности
 
