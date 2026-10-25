@@ -155,6 +155,41 @@ type RoutingRule struct {
 	Auth       *AuthRule      `yaml:"auth,omitempty"`       // per-route auth конфиг
 	RateLimit  *RateLimitRule `yaml:"rate_limit,omitempty"` // per-route rate limit
 	SignV3     *SignV3Config  `yaml:"sign_v3,omitempty"`    // per-route HMAC v3 подпись запроса
+
+	// MaxRequestBodySize — лимит тела запроса для маршрута (байты).
+	// nil — общий server.max_request_body_size, 0 — без лимита.
+	// Нужен протоколам с большими телами (WebDAV PUT): поднимать общий лимит
+	// ради одного маршрута пришлось бы для всех сервисов сразу.
+	MaxRequestBodySize *int64 `yaml:"max_request_body_size,omitempty"`
+	// ReadTimeout/WriteTimeout — дедлайны именно этого маршрута. Ставятся
+	// через http.ResponseController и перекрывают общий server.read_timeout
+	// (он остаётся коротким для фазы заголовков).
+	ReadTimeout  time.Duration `yaml:"read_timeout,omitempty"`
+	WriteTimeout time.Duration `yaml:"write_timeout,omitempty"`
+	// PreserveHost сохраняет исходный Host в запросе к бэкенду (по умолчанию
+	// подменяется на host таргета). Нужен протоколам, которые сверяют Host с
+	// абсолютными ссылками в заголовках (WebDAV Destination в MOVE/COPY).
+	PreserveHost bool `yaml:"preserve_host,omitempty"`
+	// BufferRequestBody — читать тело в память перед проксированием (нужно
+	// аудит-вебхукам). nil — true (обратная совместимость); false — тело
+	// стримится в бэкенд без буферизации и обрезания.
+	BufferRequestBody *bool `yaml:"buffer_request_body,omitempty"`
+}
+
+// BufferRequestBodyEnabled — эффективное значение buffer_request_body.
+func (r RoutingRule) BufferRequestBodyEnabled() bool {
+	if r.BufferRequestBody == nil {
+		return true
+	}
+	return *r.BufferRequestBody
+}
+
+// EffectiveMaxRequestBodySize — лимит тела для маршрута (nil → лимит сервера).
+func (r RoutingRule) EffectiveMaxRequestBodySize(serverLimit int64) int64 {
+	if r.MaxRequestBodySize == nil {
+		return serverLimit
+	}
+	return *r.MaxRequestBodySize
 }
 
 // SignV3Config — per-route подпись запроса HMAC v3 для внутренних сервисов
