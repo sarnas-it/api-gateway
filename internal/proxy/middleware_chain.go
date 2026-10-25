@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"github.com/basili4-1982/api-gateway/internal/config"
 	"bytes"
 	"context"
 	"fmt"
@@ -237,6 +238,14 @@ func corsPreflightMiddleware(mp *MultiProxy, metrics *Metrics) Middleware {
 // ──────── Route matching + health + rate limit + auth + proxy ────────
 
 // proxyHandler финальный handler для проксирования запроса
+// effectiveBodyLimit — лимит тела запроса: per-route перекрывает общий.
+func effectiveBodyLimit(serverLimit int64, rule *config.RoutingRule) int64 {
+	if rule == nil {
+		return serverLimit
+	}
+	return rule.EffectiveMaxRequestBodySize(serverLimit)
+}
+
 func (mp *MultiProxy) proxyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
@@ -310,6 +319,36 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			}
 		}
 
+		// Per-route дедлайны: общий server.read_timeout короткий (защита от
+		// медленных заголовков), а большие тела (WebDAV PUT) живут дольше.
+		if rule != nil && (rule.ReadTimeout > 0 || rule.WriteTimeout > 0) {
+			rc := http.NewResponseController(rw)
+			if rule.ReadTimeout > 0 {
+				_ = rc.SetReadDeadline(time.Now().Add(rule.ReadTimeout))
+			}
+			if rule.WriteTimeout > 0 {
+				_ = rc.SetWriteDeadline(time.Now().Add(rule.WriteTimeout))
+			}
+		}
+
+		if rule != nil && rule.PreserveHost {
+			r.Header.Set(internalHostHeader, r.Host)
+			if r.Header.Get("X-Forwarded-Host") == "" {
+				r.Header.Set("X-Forwarded-Host", r.Host)
+			}
+		}
+
+		// Быстрый отказ по заявленному размеру: обрезать тело молча нельзя
+		// (бэкенд получил бы битый файл), клиент должен увидеть 413.
+		if limit := effectiveBodyLimit(mp.config.Load().Server.EffectiveMaxRequestBodySize(), rule); limit > 0 &&
+			r.ContentLength > limit {
+			mp.setCORSHeaders(rw.Header(), r)
+			http.Error(rw, "request body too large", http.StatusRequestEntityTooLarge)
+			mp.metrics.IncRequests(r.Method, r.URL.Path, "413")
+			mp.logAccess(reqID, traceID, r, 413, 0, target)
+			return
+		}
+
 		// JWT + headers
 		if err := mp.modifyRequest(r, target, rule); err != nil {
 			mp.setCORSHeaders(rw.Header(), r)
@@ -319,11 +358,17 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			return
 		}
 
-		// Читаем тело запроса для передачи в аудит. Чтение ограничено тем же
-		// лимитом, что и проксирование, чтобы аудит не вычитывал тело
-		// неограниченно (max_request_body_size: 0 → без лимита).
-		if r.Body != nil && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "QUERY") {
-			bodyBytes, _ := readBodyLimited(r.Body, mp.config.Load().Server.EffectiveMaxRequestBodySize())
+		// Тело читается в память только когда маршрут этого требует (аудит-
+		// вебхуки). Для WebDAV это неприемлемо: 50 МиБ PUT буферизовались бы
+		// и обрезались по лимиту. buffer_request_body: false → поток идёт
+		// напрямую в бэкенд.
+		if r.Body != nil && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "QUERY") &&
+			(rule == nil || rule.BufferRequestBodyEnabled()) {
+			limit := mp.config.Load().Server.EffectiveMaxRequestBodySize()
+			if rule != nil {
+				limit = rule.EffectiveMaxRequestBodySize(limit)
+			}
+			bodyBytes, _ := readBodyLimited(r.Body, limit)
 			r.Body.Close()
 			if len(bodyBytes) > 0 && len(bodyBytes) < 65536 {
 				r = r.WithContext(context.WithValue(r.Context(), ctxKeyRequestBody, bodyBytes))
@@ -346,7 +391,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			)
 		}
 
-		mp.proxyRequest(rw, r, targetProxy, remainingPath)
+		mp.proxyRequest(rw, r, targetProxy, remainingPath, effectiveBodyLimit(mp.config.Load().Server.EffectiveMaxRequestBodySize(), rule))
 
 		// Передаём захваченное тело ответа издателю (on_response webhooks).
 		if body := rw.CapturedResponseBody(); body != nil {

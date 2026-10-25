@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -417,6 +418,11 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 // не уходит и не попадает в аудит/вебхуки.
 const internalPathHeader = "X-Gateway-Internal-Path"
 
+// internalHostHeader переносит исходный Host в Director для маршрутов с
+// preserve_host: бэкенд должен видеть публичный хост, а не адрес контейнера
+// (WebDAV сверяет с ним абсолютный Destination в MOVE/COPY).
+const internalHostHeader = "X-Gateway-Internal-Host"
+
 // proxyBufferPool переиспользует 32KB буферы для копирования тела ответа
 // (httputil.ReverseProxy.copyBuffer). Без него ReverseProxy аллоцирует
 // новый буфер на КАЖДЫЙ проксированный запрос — это самая крупная разовая
@@ -467,7 +473,12 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 				req.URL.Path = path
 				req.Header.Del(internalPathHeader)
 			}
-			req.Host = target.targetURL.Host
+			if host := req.Header.Get(internalHostHeader); host != "" {
+				req.Host = host
+				req.Header.Del(internalHostHeader)
+			} else {
+				req.Host = target.targetURL.Host
+			}
 
 			// Remove Accept-Encoding to prevent Go transport from auto-decompressing.
 			// Otherwise Go strips Content-Encoding from response but keeps compressed body,
@@ -498,6 +509,11 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 				zap.Error(err),
 				zap.String("target", target.config.Name),
 			)
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				http.Error(rw, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(rw, err.Error(), http.StatusBadGateway)
 		},
 	}
@@ -817,15 +833,16 @@ func extractRoles(claims jwt.MapClaims) (map[string]bool, error) {
 // verbatim, exactly as a reverse proxy must. It also streams the response
 // body instead of buffering it, so long-lived responses (e.g. chatcom's SSE
 // comment stream) aren't held until the upstream closes the connection.
-func (mp *MultiProxy) proxyRequest(w http.ResponseWriter, r *http.Request, target *TargetProxy, remainingPath string) {
+func (mp *MultiProxy) proxyRequest(w http.ResponseWriter, r *http.Request, target *TargetProxy, remainingPath string, bodyLimit int64) {
 	if remainingPath == "" {
 		remainingPath = "/"
 	}
 
-	if r.Body != nil {
-		if maxSize := mp.config.Load().Server.EffectiveMaxRequestBodySize(); maxSize > 0 {
-			r.Body = io.NopCloser(io.LimitReader(r.Body, maxSize))
-		}
+	if r.Body != nil && bodyLimit > 0 {
+		// MaxBytesReader (а не LimitReader): превышение — ошибка чтения,
+		// которую ErrorHandler отдаёт как 413. LimitReader молча обрезал бы
+		// тело, и бэкенд сохранил бы битый файл.
+		r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 	}
 
 	if mp.config.Load().Logging.AccessLog {

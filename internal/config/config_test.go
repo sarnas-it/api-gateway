@@ -1,6 +1,7 @@
 package config
 
 import (
+	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
 	"testing"
@@ -1352,5 +1353,52 @@ identity:
 	}
 	if !strings.Contains(err.Error(), "secret_key") {
 		t.Fatalf("error must mention secret_key, got: %v", err)
+	}
+}
+
+func TestRoutingRule_ProtocolLimits(t *testing.T) {
+	raw := []byte(`
+targets:
+  - name: dav
+    url: "http://storage:8091"
+routing:
+  rules:
+    - host: "dav.example"
+      path_prefix: "/dav/"
+      target_name: "dav"
+      max_request_body_size: 536870912
+      read_timeout: 15m
+      write_timeout: 1h
+      preserve_host: true
+      buffer_request_body: false
+`)
+	cfg := &Config{}
+	if err := yaml.Unmarshal(raw, cfg); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	rule := cfg.Routing.Rules[0]
+	if rule.MaxRequestBodySize == nil || *rule.MaxRequestBodySize != 536870912 {
+		t.Errorf("max_request_body_size = %v", rule.MaxRequestBodySize)
+	}
+	if rule.ReadTimeout != 15*time.Minute || rule.WriteTimeout != time.Hour {
+		t.Errorf("timeouts = %s / %s", rule.ReadTimeout, rule.WriteTimeout)
+	}
+	if !rule.PreserveHost {
+		t.Error("preserve_host not parsed")
+	}
+	if rule.BufferRequestBodyEnabled() {
+		t.Error("buffer_request_body: false ignored")
+	}
+	if got := rule.EffectiveMaxRequestBodySize(10 << 20); got != 536870912 {
+		t.Errorf("effective limit = %d, route must override server", got)
+	}
+
+	// Без настроек маршрут наследует серверный лимит и буферизует тело.
+	plain := RoutingRule{}
+	if plain.BufferRequestBodyEnabled() != true {
+		t.Error("default buffer_request_body must stay true")
+	}
+	if got := plain.EffectiveMaxRequestBodySize(42); got != 42 {
+		t.Errorf("default limit = %d, want server 42", got)
 	}
 }

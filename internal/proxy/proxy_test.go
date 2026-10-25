@@ -423,10 +423,20 @@ func TestProxyRequest_AppliesMaxRequestBodySize(t *testing.T) {
 	mp, tp, received := newBodyLimitProxy(t, &limit)
 
 	req := httptest.NewRequest("POST", "/", io.NopCloser(strings.NewReader("0123456789")))
-	mp.proxyRequest(httptest.NewRecorder(), req, tp, "/")
+	rec := httptest.NewRecorder()
+	mp.proxyRequest(rec, req, tp, "/", limit)
 
-	if n := <-received; n != 5 {
-		t.Fatalf("upstream read %d bytes, want 5", n)
+	// Тело сверх лимита не обрезается молча: клиент получает 413, а бэкенд
+	// не должен получить усечённый файл.
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", rec.Code)
+	}
+	select {
+	case n := <-received:
+		if n > 5 {
+			t.Fatalf("upstream read %d bytes, want <= 5", n)
+		}
+	default:
 	}
 }
 
@@ -435,7 +445,7 @@ func TestProxyRequest_ZeroMaxRequestBodySizeIsUnlimited(t *testing.T) {
 	mp, tp, received := newBodyLimitProxy(t, &limit)
 
 	req := httptest.NewRequest("POST", "/", io.NopCloser(strings.NewReader("0123456789")))
-	mp.proxyRequest(httptest.NewRecorder(), req, tp, "/")
+	mp.proxyRequest(httptest.NewRecorder(), req, tp, "/", limit)
 
 	if n := <-received; n != 10 {
 		t.Fatalf("upstream read %d bytes, want 10 (0 = unlimited)", n)

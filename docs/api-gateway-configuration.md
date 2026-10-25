@@ -247,6 +247,11 @@ headers:
 | `strip_path` | bool | `false` | Удалять префикс при проксировании | `true` |
 | `auth` | object | нет | Аутентификация маршрута | см. ниже |
 | `rate_limit` | object | нет | Лимит маршрута | см. ниже |
+| `max_request_body_size` | int | лимит сервера | Лимит тела запроса для маршрута, байты; `0` — без лимита | `536870912` |
+| `read_timeout` | duration | `server.read_timeout` | Дедлайн чтения запроса для маршрута (`http.ResponseController`) | `15m` |
+| `write_timeout` | duration | `server.write_timeout` | Дедлайн записи ответа для маршрута | `1h` |
+| `preserve_host` | bool | `false` | Передавать бэкенду исходный `Host` (по умолчанию — host таргета) | `true` |
+| `buffer_request_body` | bool | `true` | Читать тело в память (нужно аудит-вебхукам). `false` — стриминг без обрезания | `false` |
 
 `auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`).
 
@@ -277,6 +282,33 @@ routing:
         requests_per_second: 50
         burst: 100
 ```
+
+### Маршруты с большими телами (WebDAV и подобные)
+
+Общий `server.max_request_body_size` (10 МиБ) и `server.read_timeout` рассчитаны
+на JSON-API. Для протоколов, которые льют файлы, лимиты задаются на маршруте;
+тело при этом нельзя буферизовать (аудит-вебхуки его не увидят):
+
+```yaml
+targets:
+  - name: dav
+    url: "http://workspace-storage:8091"
+    timeout: 1h
+routing:
+  rules:
+    - host: "dav.example.com"
+      path_prefix: "/dav/"
+      target_name: "dav"
+      preserve_host: true          # WebDAV Destination в MOVE/COPY
+      buffer_request_body: false   # стриминг, без обрезания
+      max_request_body_size: 536870912
+      read_timeout: 15m
+      write_timeout: 1h
+```
+
+`methods` не задан — маршрут принимает любой метод, включая `PROPFIND`,
+`PROPPATCH`, `MKCOL`, `COPY`, `MOVE`, `LOCK`, `UNLOCK`. При превышении лимита
+клиент получает `413`, а не усечённый файл в бэкенде.
 
 Выбирается правило с самым длинным совпадающим `path_prefix` среди тех, у кого совпали `host` и `methods`. Если ничего не совпало — 404. Правила, совпадающие по `(host, path_prefix, methods)`, делят один пул балансировки и **обязаны** совпадать по `auth`, `strip_path` и `rate_limit`, иначе запуск завершается ошибкой.
 
