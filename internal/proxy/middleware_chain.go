@@ -1,10 +1,10 @@
 package proxy
 
 import (
-	"github.com/basili4-1982/api-gateway/internal/config"
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/basili4-1982/api-gateway/internal/config"
 	"io"
 	"net"
 	"net/http"

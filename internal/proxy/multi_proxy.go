@@ -2,10 +2,10 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
