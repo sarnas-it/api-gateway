@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // verifyHMACV2 повторяет серверную проверку go-hmac-auth VerifyRequest.

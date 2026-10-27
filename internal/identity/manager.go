@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
-	"github.com/basili4-1982/api-gateway/internal/jwtutil"
+	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/jwtutil"
 )
 
 type provider struct {

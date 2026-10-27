@@ -1,4 +1,4 @@
-module github.com/basili4-1982/api-gateway
+module code.sarnas.ru/api-gateway
 
 go 1.26.9
 

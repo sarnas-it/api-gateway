@@ -5,7 +5,7 @@ package discovery
 import (
 	"context"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // Result — результат одного прохода discovery.

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
-	"github.com/basili4-1982/api-gateway/internal/jwtutil"
+	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/jwtutil"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )

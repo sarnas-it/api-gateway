@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basili4-1982/api-gateway/internal/dashboard"
+	"code.sarnas.ru/api-gateway/internal/dashboard"
 )
 
 func main() {

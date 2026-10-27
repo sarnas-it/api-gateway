@@ -13,10 +13,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
-	"github.com/basili4-1982/api-gateway/internal/discovery"
-	"github.com/basili4-1982/api-gateway/internal/logger"
-	"github.com/basili4-1982/api-gateway/internal/proxy"
+	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/discovery"
+	"code.sarnas.ru/api-gateway/internal/logger"
+	"code.sarnas.ru/api-gateway/internal/proxy"
 )
 
 func main() {
