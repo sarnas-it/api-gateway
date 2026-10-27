@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 	"go.uber.org/zap"
 )
 

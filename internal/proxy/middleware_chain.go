@@ -2,9 +2,9 @@ package proxy
 
 import (
 	"bytes"
+	"code.sarnas.ru/api-gateway/internal/config"
 	"context"
 	"fmt"
-	"github.com/basili4-1982/api-gateway/internal/config"
 	"io"
 	"net"
 	"net/http"

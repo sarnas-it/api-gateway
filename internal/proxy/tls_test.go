@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 func TestBuildCertManager_Staging(t *testing.T) {

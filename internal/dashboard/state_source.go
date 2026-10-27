@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // DiscoverySummary is the last-known-good discovery state persisted by the

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // runCheck загружает и валидирует конфиг, печатает предупреждения и ошибки.

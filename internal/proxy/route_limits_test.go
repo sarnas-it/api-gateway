@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // newRouteProxy собирает MultiProxy с одним маршрутом на реальный upstream.

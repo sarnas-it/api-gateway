@@ -22,10 +22,10 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
-	"github.com/basili4-1982/api-gateway/internal/identity"
-	"github.com/basili4-1982/api-gateway/internal/jwtutil"
-	"github.com/basili4-1982/api-gateway/internal/permissions"
+	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/identity"
+	"code.sarnas.ru/api-gateway/internal/jwtutil"
+	"code.sarnas.ru/api-gateway/internal/permissions"
 	"github.com/golang-jwt/jwt/v5"
 )
 

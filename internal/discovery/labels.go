@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 // ParseOptions — параметры парсинга labels.

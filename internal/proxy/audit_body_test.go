@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/basili4-1982/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 func ctxRequest(r *httptest.ResponseRecorder, reqID string, reqBody, respBody []byte, ct string) context.Context {
