@@ -1269,6 +1269,12 @@ func (mp *MultiProxy) httpRedirectHandler() http.Handler {
 			return
 		}
 		cfg := mp.config.Load()
+		// Когда протокол воркеров вынесен на mTLS-листенер, публичный HTTP
+		// не должен ни редиректить на него, ни проксировать его напрямую.
+		if cfg.TLS != nil && cfg.TLS.WorkerPort > 0 && isWorkerPath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
 		if cfg.TLS == nil || !cfg.TLS.RedirectHTTP {
 			mp.ServeHTTP(w, r)
 			return

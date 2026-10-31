@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"reflect"
@@ -928,6 +929,19 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// normalizeRequestHost отбрасывает порт из заголовка Host. Для IPv6
+// возвращает адрес без скобок, чтобы правила можно было задавать как ::1.
+func normalizeRequestHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return strings.Trim(h, "[]")
+	}
+	return host
+}
+
 // GetTargetByName возвращает таргет по имени
 func (c *Config) GetTargetByName(name string) *TargetConfig {
 	for i := range c.Targets {
@@ -945,7 +959,10 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 
 	reqHost := ""
 	if len(host) > 0 {
-		reqHost = host[0]
+		// Порт в Host не участвует в правилах: воркеры ходят на
+		// https://tracker.sarnas.ru:8444 и присылают Host с портом, а
+		// правила заданы именами хостов.
+		reqHost = normalizeRequestHost(host[0])
 	}
 
 	for i := range c.Routing.Rules {

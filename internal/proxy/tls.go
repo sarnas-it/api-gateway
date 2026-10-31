@@ -19,8 +19,12 @@ import (
 // letsEncryptStagingDirectory — ACME directory тестового CA Let's Encrypt.
 const letsEncryptStagingDirectory = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
-// workerPathPrefix — единственный путь, доступный на mTLS-листенере воркеров.
+// workerPathPrefix — префиксы протокола воркеров. Кроме слотов воркеров сюда
+// входит lease-scoped выдача секретов: она тоже не должна быть доступна на
+// публичном листенере без клиентского сертификата.
 const workerPathPrefix = "/api/v1/workers/"
+
+var workerPathPrefixes = []string{workerPathPrefix, "/api/v1/worker-leases/"}
 
 // buildCertManager собирает autocert.Manager по TLS-конфигу. При staging
 // используется ACME staging directory и отдельный cache-подкаталог, чтобы
@@ -68,8 +72,13 @@ func metricsOverHTTPHandler(main, redirect http.Handler) http.Handler {
 // нормализуется, чтобы /api/v1/workers/../auth не считался разрешённым.
 func isWorkerPath(p string) bool {
 	clean := path.Clean(p)
-	base := strings.TrimSuffix(workerPathPrefix, "/")
-	return clean == base || strings.HasPrefix(clean, workerPathPrefix)
+	for _, prefix := range workerPathPrefixes {
+		base := strings.TrimSuffix(prefix, "/")
+		if clean == base || strings.HasPrefix(clean, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // workerOnlyHandler пропускает только /api/v1/workers/*, остальное отдаёт 404.
@@ -78,6 +87,19 @@ func isWorkerPath(p string) bool {
 func workerOnlyHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isWorkerPath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// publicWorkerMutedHandler закрывает протокол воркеров на публичном
+// листенере, когда поднят отдельный mTLS-листенер. Иначе mTLS остаётся
+// необязательным: воркер мог бы прийти на :443 и обойти проверку сертификата.
+func publicWorkerMutedHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isWorkerPath(r.URL.Path) {
 			http.NotFound(w, r)
 			return
 		}
@@ -112,9 +134,14 @@ func (mp *MultiProxy) startTLS() error {
 		workerClientCAs = pool
 	}
 
+	publicHandler := http.Handler(mp)
+	if tlsCfg.WorkerPort > 0 {
+		publicHandler = publicWorkerMutedHandler(publicHandler)
+	}
+
 	tlsServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", tlsCfg.Port),
-		Handler:      mp,
+		Handler:      publicHandler,
 		ReadTimeout:  mp.config.Load().Server.ReadTimeout,
 		WriteTimeout: mp.config.Load().Server.WriteTimeout,
 		IdleTimeout:  mp.config.Load().Server.IdleTimeout,
@@ -122,7 +149,7 @@ func (mp *MultiProxy) startTLS() error {
 	}
 	mp.httpsServer = tlsServer
 
-	httpHandler := certManager.HTTPHandler(metricsOverHTTPHandler(mp, mp.httpRedirectHandler()))
+	httpHandler := certManager.HTTPHandler(metricsOverHTTPHandler(publicHandler, mp.httpRedirectHandler()))
 	httpServer := &http.Server{
 		Addr:        fmt.Sprintf(":%d", tlsCfg.HTTPPort),
 		Handler:     httpHandler,
@@ -153,6 +180,7 @@ func (mp *MultiProxy) startTLS() error {
 		zap.Bool("staging", tlsCfg.Staging),
 		zap.String("directory_url", tlsCfg.DirectoryURL),
 		zap.Int("targets", len(mp.targets)),
+		zap.Bool("worker_paths_on_public_listener", tlsCfg.WorkerPort == 0),
 	)
 
 	mp.logTargets()
