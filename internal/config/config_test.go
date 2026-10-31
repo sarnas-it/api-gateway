@@ -1,12 +1,57 @@
 package config
 
 import (
-	"gopkg.in/yaml.v3"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
+
+// writeTestCACert создаёт self-signed CA в PEM во временном каталоге теста.
+// Сертификаты не коммитятся — только для проверки загрузки CA.
+func writeTestCACert(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-worker-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "worker-ca.pem")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(path) })
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
@@ -324,6 +369,198 @@ tls:
 	_, _, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for TLS without email")
+	}
+}
+
+func TestTLS_WorkerListenerDisabledByDefault(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.TLS.WorkerPort != 0 {
+		t.Errorf("worker_port default = %d, want 0 (disabled)", cfg.TLS.WorkerPort)
+	}
+}
+
+func TestTLS_WorkerListenerValidConfig(t *testing.T) {
+	caFile := writeTestCACert(t)
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+  worker_port: 8444
+  worker_client_ca_file: "` + caFile + `"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.TLS.WorkerPort != 8444 {
+		t.Errorf("worker_port = %d, want 8444", cfg.TLS.WorkerPort)
+	}
+	if cfg.TLS.WorkerClientCAFile != caFile {
+		t.Errorf("worker_client_ca_file = %q, want %q", cfg.TLS.WorkerClientCAFile, caFile)
+	}
+}
+
+func TestTLS_WorkerListenerRequiresCA(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+  worker_port: 8444
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for worker_port without worker_client_ca_file")
+	}
+	if !strings.Contains(err.Error(), "worker_client_ca_file") {
+		t.Errorf("error should name worker_client_ca_file, got %v", err)
+	}
+}
+
+func TestTLS_WorkerListenerRejectsUnreadableCA(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+  worker_port: 8444
+  worker_client_ca_file: "/nonexistent/worker-ca.pem"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for unreadable worker_client_ca_file")
+	}
+	if !strings.Contains(err.Error(), "worker_client_ca_file") {
+		t.Errorf("error should name worker_client_ca_file, got %v", err)
+	}
+}
+
+func TestTLS_WorkerListenerRejectsNonPEMCA(t *testing.T) {
+	notPEM := filepath.Join(t.TempDir(), "not-a-ca.pem")
+	if err := os.WriteFile(notPEM, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+  worker_port: 8444
+  worker_client_ca_file: "` + notPEM + `"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for non-PEM worker_client_ca_file")
+	}
+}
+
+func TestTLS_WorkerListenerRequiresTLSEnabled(t *testing.T) {
+	caFile := writeTestCACert(t)
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: false
+  worker_port: 8444
+  worker_client_ca_file: "` + caFile + `"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for worker_port with TLS disabled")
+	}
+}
+
+func TestTLS_WorkerListenerRejectsPortConflict(t *testing.T) {
+	caFile := writeTestCACert(t)
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  port: 8444
+  domains:
+    - "api.example.com"
+  email: "admin@example.com"
+  worker_port: 8444
+  worker_client_ca_file: "` + caFile + `"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for worker_port equal to tls.port")
+	}
+}
+
+func TestLoadClientCAPool(t *testing.T) {
+	caFile := writeTestCACert(t)
+	pool, err := LoadClientCAPool(caFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pool == nil {
+		t.Fatal("expected CA pool")
+	}
+
+	// Пул действительно принимает сертификат из файла как доверенный корень.
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		t.Fatal("no PEM block in CA file")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
+		t.Errorf("pool does not trust the CA from the file: %v", err)
+	}
+
+	if _, err := LoadClientCAPool(""); err == nil {
+		t.Error("expected error for empty path")
+	}
+	if _, err := LoadClientCAPool(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
+		t.Error("expected error for missing file")
 	}
 }
 
