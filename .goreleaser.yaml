@@ -18,8 +18,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/basili4-1982/api-gateway/internal/proxy.GitSHA={{ .FullCommit }}
-      - -X github.com/basili4-1982/api-gateway/internal/proxy.BuildTime={{ .Date }}
+      - -X code.sarnas.ru/api-gateway/internal/proxy.GitSHA={{ .FullCommit }}
+      - -X code.sarnas.ru/api-gateway/internal/proxy.BuildTime={{ .Date }}
   - id: dashboard
     main: ./cmd/dashboard
     binary: api-gateway-dashboard
