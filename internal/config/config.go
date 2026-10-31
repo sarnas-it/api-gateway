@@ -61,6 +61,13 @@ type TLSConfig struct {
 	// DirectoryURL — необязательный ACME directory URL. Если задан, перекрывает
 	// выбор CA по staging. Пусто = staging ? Let's Encrypt staging : production.
 	DirectoryURL string `yaml:"directory_url"`
+	// WorkerPort — порт отдельного HTTPS-листенера для протокола воркеров
+	// (/api/v1/workers/*) с обязательным клиентским сертификатом (mTLS).
+	// 0 (по умолчанию) — листенер выключен.
+	WorkerPort int `yaml:"worker_port"`
+	// WorkerClientCAFile — PEM-файл с CA (или набором CA), которым проверяются
+	// клиентские сертификаты воркеров. Обязателен при worker_port > 0.
+	WorkerClientCAFile string `yaml:"worker_client_ca_file"`
 }
 
 // StaticApp конфигурация SPA фронтенда
@@ -809,6 +816,23 @@ func (c *Config) validate() error {
 		if c.TLS.Email == "" {
 			return fmt.Errorf("email is required for Let's Encrypt registration")
 		}
+		if c.TLS.WorkerPort != 0 {
+			if c.TLS.WorkerPort < 0 {
+				return fmt.Errorf("tls.worker_port must be positive or 0 (disabled), got %d", c.TLS.WorkerPort)
+			}
+			if c.TLS.WorkerPort == c.TLS.Port || c.TLS.WorkerPort == c.TLS.HTTPPort {
+				return fmt.Errorf("tls.worker_port %d conflicts with tls.port %d or tls.http_port %d",
+					c.TLS.WorkerPort, c.TLS.Port, c.TLS.HTTPPort)
+			}
+			if strings.TrimSpace(c.TLS.WorkerClientCAFile) == "" {
+				return fmt.Errorf("tls.worker_client_ca_file is required when tls.worker_port is set")
+			}
+			if _, err := LoadClientCAPool(c.TLS.WorkerClientCAFile); err != nil {
+				return fmt.Errorf("invalid tls.worker_client_ca_file: %w", err)
+			}
+		}
+	} else if c.TLS != nil && c.TLS.WorkerPort != 0 {
+		return fmt.Errorf("tls.worker_port requires tls.enabled: true")
 	}
 
 	// Проверяем JWT конфигурацию

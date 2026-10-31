@@ -98,8 +98,18 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `staging` | bool | `false` | `true` — ACME staging CA (для отладки), `false` — production Let's Encrypt | `false` |
 | `directory_url` | string | `""` | Свой ACME directory URL; если задан, перекрывает выбор CA по `staging` | `https://acme-staging-v02.api.letsencrypt.org/directory` |
 | `redirect_http` | bool | `false` | Редиректит HTTP на HTTPS; `/health` и `/ready` на HTTP-порту отвечают 200 | `true` |
+| `worker_port` | int | `0` | Порт отдельного mTLS-листенера для `/api/v1/workers/*`; `0` — выключен | `8444` |
+| `worker_client_ca_file` | string | — | PEM-файл CA (один или несколько сертификатов) для проверки клиентских сертификатов; обязателен при `worker_port > 0` | `/etc/api-gateway/worker-ca.pem` |
 
 При включённом TLS запускаются два сервера: HTTPS на `port` и HTTP на `http_port` для ACME-challenge и редиректа. `staging: true` использует реальный staging CA и отдельный подкаталог кеша, чтобы staging-сертификаты не смешивались с production.
+
+Если задан `worker_port`, поднимается третий листенер — HTTPS с
+`ClientAuth: RequireAndVerifyClientCert` и проверкой клиентского сертификата по
+CA из `worker_client_ca_file`. Серверный сертификат — тот же autocert-сертификат,
+что и на `port`. На этом листенере доступны только пути `/api/v1/workers/*`,
+остальные запросы получают `404`. При `worker_port > 0` файл CA обязателен и
+читается при старте: ошибка чтения/разбора, отсутствие CA или конфликт
+`worker_port` с `port`/`http_port` — ошибка запуска (fail closed).
 
 ## static
 

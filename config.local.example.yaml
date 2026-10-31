@@ -27,6 +27,10 @@ application:
 #   staging: false                # true → ACME staging CA + cache_dir/staging
 #   directory_url: ""             # необязательно: свой ACME directory URL (перекрывает staging)
 #   redirect_http: true
+#   # Отдельный mTLS-листенер для /api/v1/workers/*; 0 — выключен.
+#   worker_port: 8444
+#   # PEM-файл CA для проверки клиентских сертификатов (обязателен при worker_port > 0).
+#   worker_client_ca_file: "/etc/api-gateway/worker-ca.pem"
 
 targets:
   - name: "auth-api"

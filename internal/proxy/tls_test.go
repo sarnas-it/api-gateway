@@ -1,15 +1,65 @@
 package proxy
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/acme/autocert"
 
 	"code.sarnas.ru/api-gateway/internal/config"
 )
+
+// writeTestCA создаёт self-signed CA в PEM во временном каталоге теста и
+// возвращает путь к файлу и пул с этим CA.
+func writeTestCA(t *testing.T) (string, *x509.CertPool) {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-worker-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "worker-ca.pem")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	pool, err := config.LoadClientCAPool(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, pool
+}
 
 func TestBuildCertManager_Staging(t *testing.T) {
 	m := buildCertManager(&config.TLSConfig{
@@ -94,5 +144,61 @@ func TestMetricsOverHTTPHandler(t *testing.T) {
 		if rec.Code != tc.want {
 			t.Errorf("%s: got %d, want %d", tc.path, rec.Code, tc.want)
 		}
+	}
+}
+
+func TestBuildWorkerTLSConfig_RequiresAndVerifiesClientCert(t *testing.T) {
+	_, pool := writeTestCA(t)
+
+	cfg := buildWorkerTLSConfig(&autocert.Manager{Prompt: autocert.AcceptTOS}, pool)
+
+	if cfg.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Errorf("ClientAuth = %v, want RequireAndVerifyClientCert", cfg.ClientAuth)
+	}
+	if cfg.ClientCAs == nil {
+		t.Fatal("ClientCAs must be set")
+	}
+	if !cfg.ClientCAs.Equal(pool) {
+		t.Error("ClientCAs must be the pool loaded from worker_client_ca_file")
+	}
+	if cfg.GetCertificate == nil {
+		t.Error("GetCertificate must come from the autocert manager (same server certificate as :443)")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %x, want TLS 1.2", cfg.MinVersion)
+	}
+}
+
+func TestWorkerOnlyHandler_AllowsOnlyWorkerPaths(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("worker"))
+	})
+	h := workerOnlyHandler(next)
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want int
+	}{
+		{"worker collection", "/api/v1/workers/", http.StatusOK},
+		{"worker collection without slash", "/api/v1/workers", http.StatusOK},
+		{"worker subpath", "/api/v1/workers/heartbeat", http.StatusOK},
+		{"nested worker path", "/api/v1/workers/jobs/42/result", http.StatusOK},
+		{"base path", "/", http.StatusNotFound},
+		{"auth api", "/api/v1/auth/login", http.StatusNotFound},
+		{"other api", "/api/v1/client/me", http.StatusNotFound},
+		{"metrics", "/metrics", http.StatusNotFound},
+		{"health", "/health", http.StatusNotFound},
+		{"traversal out of workers", "/api/v1/workers/../auth/login", http.StatusNotFound},
+		{"prefix lookalike", "/api/v1/workers-other/heartbeat", http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != tc.want {
+				t.Errorf("%s: got %d, want %d", tc.path, rec.Code, tc.want)
+			}
+		})
 	}
 }

@@ -158,6 +158,7 @@ type MultiProxy struct {
 	mu                 sync.RWMutex
 	httpServer         *http.Server
 	httpsServer        *http.Server
+	workerServer       *http.Server
 	globalLimiter      *rate.Limiter
 	handler            http.Handler
 	tracerProvider     *TracerProvider
@@ -1200,6 +1201,12 @@ func (mp *MultiProxy) Stop(ctx context.Context) error {
 	if mp.httpsServer != nil {
 		if err := mp.httpsServer.Shutdown(ctx); err != nil {
 			mp.logger.Error("HTTPS server shutdown error", zap.Error(err))
+		}
+	}
+
+	if mp.workerServer != nil {
+		if err := mp.workerServer.Shutdown(ctx); err != nil {
+			mp.logger.Error("Worker mTLS server shutdown error", zap.Error(err))
 		}
 	}
 

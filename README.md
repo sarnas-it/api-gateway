@@ -89,6 +89,84 @@ api-gateway -config /etc/proxy/config.yaml -check -strict
 > Примечание: per-route `rate_limit` применяется к запросу. В более ранних
 > сборках из-за ошибки в сопоставлении правила лимит не срабатывал — исправлено.
 
+### mTLS для воркеров (отдельный листенер `:8444`)
+
+Протокол воркеров (`/api/v1/workers/*`) вынесен на отдельный HTTPS-листенер с
+обязательным клиентским сертификатом. Основной `:443` не меняется: там
+по-прежнему обычная аутентификация по JWT. На worker-листенере доступны только
+пути под `/api/v1/workers/`, всё остальное — `404`, даже с валидным клиентским
+сертификатом.
+
+```yaml
+tls:
+  enabled: true
+  port: 443
+  http_port: 80
+  domains:
+    - "tracker.sarnas.ru"
+  email: "admin@example.com"
+  cache_dir: "/var/lib/api-gateway/certs"
+  # Отдельный mTLS-листенер для воркеров; 0 — выключен.
+  worker_port: 8444
+  # PEM-файл CA (один или несколько сертификатов), которым подписаны
+  # клиентские сертификаты воркеров. Обязателен при worker_port > 0.
+  worker_client_ca_file: "/etc/api-gateway/worker-ca.pem"
+```
+
+Серверный сертификат на `:8444` — тот же, что на `:443` (autocert по
+`tls.domains`), отдельный сертификат для worker-порта не нужен. Если
+`worker_port > 0`, гейтвей при старте читает `worker_client_ca_file`; пустое
+значение, нечитаемый файл, отсутствие PEM-сертификатов или конфликт порта с
+`port`/`http_port` — ошибка запуска (fail closed). Листенер без проверки клиента
+не поднимается.
+
+#### CA и клиентский сертификат для хоста воркеров
+
+Ключ CA держите в секрете (не в git и не на гейтвее). На гейтвей попадает
+только публичный `worker-ca.pem`.
+
+```bash
+# 1. CA (срок 10 лет)
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+  -keyout worker-ca.key -out worker-ca.pem \
+  -subj "/CN=sarnas-worker-ca"
+
+# 2. Ключ и CSR хоста воркеров (CN — идентификатор хоста)
+openssl req -newkey rsa:2048 -sha256 -nodes \
+  -keyout worker.key -out worker.csr \
+  -subj "/CN=worker-host-1"
+
+# 3. Подпись CSR нашей CA (срок 1 год)
+openssl x509 -req -in worker.csr -CA worker-ca.pem -CAkey worker-ca.key \
+  -CAcreateserial -days 365 -sha256 -out worker.crt
+```
+
+Воркер ходит строго на `https://tracker.sarnas.ru:8444` и предъявляет
+`worker.crt` + `worker.key`:
+
+```bash
+curl --cert worker.crt --key worker.key \
+  https://tracker.sarnas.ru:8444/api/v1/workers/heartbeat
+```
+
+Порт `8444` должен быть открыт в firewall, а `tracker.sarnas.ru` — входить в
+`tls.domains` (иначе autocert не выпустит сертификат для SNI).
+
+Без клиентского сертификата (или с сертификатом чужой CA) TLS-handshake
+обрывается — HTTP-ответа `404`/`401` в этом случае не будет.
+
+#### Ротация сертификатов
+
+- **Клиентские**: выпустите новый сертификат той же CA и замените его на
+  воркере. Перезапуск гейтвея не нужен.
+- **Смена CA**: положите в `worker_client_ca_file` новый PEM (можно склеить
+  старый и новый CA в одном файле) и перезапустите гейтвей. После перевыпуска
+  всех клиентских сертификатов старый CA из файла уберите и перезапустите снова.
+- **Проверка перед ротацией**: `curl` с новым сертификатом должен пройти
+  TLS-handshake (ошибка `certificate verify failed`/`bad certificate` означает,
+  что CA ещё не принят гейтвеем).
+- **Серверный** сертификат общий с `:443` и продлевается autocert автоматически.
+
 ## Service discovery (Docker/Podman)
 
 Гейтвей умеет находить бэкенды по labels контейнеров — как Docker-провайдер
