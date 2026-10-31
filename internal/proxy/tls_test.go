@@ -181,10 +181,12 @@ func TestWorkerOnlyHandler_AllowsOnlyWorkerPaths(t *testing.T) {
 		path string
 		want int
 	}{
-		{"worker collection", "/api/v1/workers/", http.StatusOK},
-		{"worker collection without slash", "/api/v1/workers", http.StatusOK},
-		{"worker subpath", "/api/v1/workers/heartbeat", http.StatusOK},
-		{"nested worker path", "/api/v1/workers/jobs/42/result", http.StatusOK},
+		{"worker register", "/api/v1/workers/register", http.StatusOK},
+		{"worker subpath", "/api/v1/workers/71c1/leases/claim", http.StatusOK},
+		{"nested worker path", "/api/v1/workers/71c1/leases/abc/release", http.StatusOK},
+		{"admin approve", "/api/v1/workers/71c1/approve", http.StatusNotFound},
+		{"admin drain", "/api/v1/workers/71c1/drain", http.StatusNotFound},
+		{"worker collection", "/api/v1/workers/", http.StatusNotFound},
 		{"base path", "/", http.StatusNotFound},
 		{"auth api", "/api/v1/auth/login", http.StatusNotFound},
 		{"other api", "/api/v1/client/me", http.StatusNotFound},
@@ -193,6 +195,7 @@ func TestWorkerOnlyHandler_AllowsOnlyWorkerPaths(t *testing.T) {
 		{"lease secrets", "/api/v1/worker-leases/abc/secrets", http.StatusOK},
 		{"lease collection", "/api/v1/worker-leases", http.StatusOK},
 		{"traversal out of workers", "/api/v1/workers/../auth/login", http.StatusNotFound},
+		{"worker heartbeat", "/api/v1/workers/71c1/heartbeat", http.StatusOK},
 		{"prefix lookalike", "/api/v1/workers-other/heartbeat", http.StatusNotFound},
 		{"lease lookalike", "/api/v1/worker-leases-other/x/secrets", http.StatusNotFound},
 	} {

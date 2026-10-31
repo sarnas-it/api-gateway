@@ -19,12 +19,10 @@ import (
 // letsEncryptStagingDirectory — ACME directory тестового CA Let's Encrypt.
 const letsEncryptStagingDirectory = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
-// workerPathPrefix — префиксы протокола воркеров. Кроме слотов воркеров сюда
-// входит lease-scoped выдача секретов: она тоже не должна быть доступна на
-// публичном листенере без клиентского сертификата.
+// workerPathPrefix — протокол воркеров. На публичном листенере он закрыт, но
+// админские ручки того же префикса (approve/drain) остаются доступны: иначе
+// одобрение слота невозможно без клиентского сертификата.
 const workerPathPrefix = "/api/v1/workers/"
-
-var workerPathPrefixes = []string{workerPathPrefix, "/api/v1/worker-leases/"}
 
 // buildCertManager собирает autocert.Manager по TLS-конфигу. При staging
 // используется ACME staging directory и отдельный cache-подкаталог, чтобы
@@ -71,13 +69,26 @@ func metricsOverHTTPHandler(main, redirect http.Handler) http.Handler {
 // isWorkerPath сообщает, относится ли путь к протоколу воркеров. Путь
 // нормализуется, чтобы /api/v1/workers/../auth не считался разрешённым.
 func isWorkerPath(p string) bool {
-	clean := path.Clean(p)
-	for _, prefix := range workerPathPrefixes {
-		base := strings.TrimSuffix(prefix, "/")
-		if clean == base || strings.HasPrefix(clean, prefix) {
-			return true
-		}
+	segs := strings.Split(strings.Trim(path.Clean(p), "/"), "/")
+	if len(segs) < 3 || segs[0] != "api" || segs[1] != "v1" {
+		return false
 	}
+	// Lease-scoped секреты: токен аренды, не credential воркера.
+	if segs[2] == "worker-leases" {
+		return true
+	}
+	if segs[2] != "workers" {
+		return false
+	}
+	switch {
+	case len(segs) == 4 && segs[3] == "register":
+		return true
+	case len(segs) == 5 && segs[4] == "heartbeat":
+		return true
+	case len(segs) >= 6 && segs[4] == "leases":
+		return true
+	}
+	// approve и drain — админские ручки, они остаются на публичном :443.
 	return false
 }
 
