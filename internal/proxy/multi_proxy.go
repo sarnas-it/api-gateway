@@ -464,9 +464,10 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 	return &httputil.ReverseProxy{
 		Transport:  target.transport,
 		BufferPool: sharedProxyBufferPool,
-		// Немедленный flush: необходимо для SSE (text/event-stream), иначе
-		// потоковые ответы буферизуются и клиент не получает события.
-		FlushInterval: -1,
+		// FlushInterval не задаём: ReverseProxy сам сбрасывает буфер сразу для
+		// text/event-stream и для ответов без Content-Length (SSE, чанки), а для
+		// обычных ответов не делает лишнего flush после каждой записи.
+		// Явный -1 стоил ~13% RPS на проксировании (см. TestReverseProxy_Streams*).
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.targetURL.Scheme
 			req.URL.Host = target.targetURL.Host
