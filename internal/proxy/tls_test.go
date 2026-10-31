@@ -190,8 +190,11 @@ func TestWorkerOnlyHandler_AllowsOnlyWorkerPaths(t *testing.T) {
 		{"other api", "/api/v1/client/me", http.StatusNotFound},
 		{"metrics", "/metrics", http.StatusNotFound},
 		{"health", "/health", http.StatusNotFound},
+		{"lease secrets", "/api/v1/worker-leases/abc/secrets", http.StatusOK},
+		{"lease collection", "/api/v1/worker-leases", http.StatusOK},
 		{"traversal out of workers", "/api/v1/workers/../auth/login", http.StatusNotFound},
 		{"prefix lookalike", "/api/v1/workers-other/heartbeat", http.StatusNotFound},
+		{"lease lookalike", "/api/v1/worker-leases-other/x/secrets", http.StatusNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -200,5 +203,32 @@ func TestWorkerOnlyHandler_AllowsOnlyWorkerPaths(t *testing.T) {
 				t.Errorf("%s: got %d, want %d", tc.path, rec.Code, tc.want)
 			}
 		})
+	}
+}
+
+// TT-139: при включённом mTLS-листенере публичный :443 не должен обслуживать
+// протокол воркеров, иначе клиентский сертификат можно обойти.
+func TestPublicWorkerMutedHandler_BlocksWorkerPaths(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h := publicWorkerMutedHandler(next)
+	for _, path := range []string{
+		"/api/v1/workers/register",
+		"/api/v1/workers/abc/leases/claim",
+		"/api/v1/worker-leases/abc/secrets",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s on the public listener = %d, want 404", path, rec.Code)
+		}
+	}
+	for _, path := range []string{"/healthz", "/api/v1/tasks"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s = %d, want it to pass through", path, rec.Code)
+		}
 	}
 }

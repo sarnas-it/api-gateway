@@ -1639,3 +1639,28 @@ routing:
 		t.Errorf("default limit = %d, want server 42", got)
 	}
 }
+
+// Воркеры приходят на отдельный порт, поэтому Host содержит :8444. Правила
+// маршрутизации заданы без порта — порт не должен ломать выбор таргета.
+func TestFindTargetForPath_HostWithPort(t *testing.T) {
+	yaml := `
+targets:
+  - name: "tasktracker"
+    url: "http://tasktracker:8080"
+routing:
+  rules:
+    - host: "tracker.sarnas.ru"
+      path_prefix: "/"
+      target_name: "tasktracker"
+`
+	cfg, _, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"tracker.sarnas.ru", "tracker.sarnas.ru:8444", "TRACKER.SARNAS.RU:443"} {
+		target, rule := cfg.FindTargetForPath("/api/v1/workers/register", "POST", host)
+		if target == nil || rule == nil || rule.TargetName != "tasktracker" {
+			t.Errorf("host %q did not match the tracker rule", host)
+		}
+	}
+}
