@@ -1,0 +1,61 @@
+version: 2
+
+project_name: api-gateway
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: api-gateway
+    main: ./cmd/
+    binary: api-gateway
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X code.sarnas.ru/api-gateway/internal/proxy.GitSHA={{ .FullCommit }}
+      - -X code.sarnas.ru/api-gateway/internal/proxy.BuildTime={{ .Date }}
+  - id: dashboard
+    main: ./cmd/dashboard
+    binary: api-gateway-dashboard
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - config.local.example.yaml
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  groups:
+    - title: Возможности
+      regexp: '^feat'
+    - title: Исправления
+      regexp: '^fix'
+    - title: Прочее
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore\(ci\):'
