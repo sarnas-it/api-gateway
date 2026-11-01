@@ -96,3 +96,22 @@ func TestRunCheck_UnknownPlugin(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
 }
+
+func TestRunCheck_UnknownAuthConnector(t *testing.T) {
+	cfg := `
+targets:
+  - name: backend
+    url: "http://backend:80"
+routing:
+  rules:
+    - path_prefix: "/api/keys"
+      target_name: "backend"
+      auth:
+        connector: "no-such-connector"
+`
+	var out, errOut bytes.Buffer
+	code := runCheck(writeTemp(t, cfg), false, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "no-such-connector") {
+		t.Fatalf("code=%d stderr=%q", code, errOut.String())
+	}
+}

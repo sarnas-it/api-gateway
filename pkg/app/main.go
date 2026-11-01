@@ -93,6 +93,15 @@ func Main() {
 		})
 		log.Info("Applied HTTP middleware modules", zap.Int("count", len(mws)))
 	}
+	connectors, err := authConnectors(cfg)
+	if err != nil {
+		log.Error("Failed to wire auth connectors", zap.Error(err))
+		os.Exit(1)
+	}
+	if len(connectors) > 0 {
+		p.SetAuthConnectors(connectors)
+		log.Info("Compiled auth connectors", zap.Int("count", len(connectors)))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

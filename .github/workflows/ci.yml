@@ -74,9 +74,10 @@ jobs:
       - name: Build standard gateway
         run: /tmp/xgate build --src . --output /tmp/gateway
 
-      - name: Test DNS modules
+      - name: Test modules
         run: |
-          for d in modules/dns/*; do
+          for d in modules/*/ modules/dns/*/; do
+            [ -f "$d/go.mod" ] || continue
             (cd "$d" && go test ./...)
           done
 
@@ -89,8 +90,12 @@ jobs:
             --with code.sarnas.ru/xgate-modules/dns-route53=./modules/dns/route53 \
             --output /tmp/gateway-dns
 
-      - name: Build with example module
-        run: /tmp/xgate build --src . --with code.sarnas.ru/xgate-modules/example=./modules/example --output /tmp/gateway-example
+      - name: Build with example and API-key modules
+        run: |
+          /tmp/xgate build --src . \
+            --with code.sarnas.ru/xgate-modules/example=./modules/example \
+            --with code.sarnas.ru/xgate-modules/apikey=./modules/apikey \
+            --output /tmp/gateway-example
 
       - name: Verify binaries
         run: test -x /tmp/gateway && test -x /tmp/gateway-dns && test -x /tmp/gateway-example

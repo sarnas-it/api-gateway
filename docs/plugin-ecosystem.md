@@ -18,9 +18,12 @@
 - `plugin.Module` — имя и регистрация.
 - `plugin.DNSProvider` — `New(map[string]string) (libdns.RecordAppender, libdns.RecordDeleter, error)`.
 - `plugin.HTTPMiddleware` — `Wrap(http.Handler) http.Handler`.
-- Дальше: `AuthConnector`, `DiscoveryProvider`, `Storage`.
+- `plugin.AuthConnector` — `Authenticate(*http.Request) (map[string]any, error)`;
+  включается на маршруте через `auth.connector: <name>`.
+- Дальше: `DiscoveryProvider`, `Storage`.
 
 DNS-модули: `modules/dns/{cloudflare,desec,digitalocean,route53}` — отдельные Go-модули.
+Auth-коннектор: `modules/apikey` (статичные ключи, роли из конфига).
 `tls.dns_provider: <name>` работает только в бинарнике, собранном с этим
 модулем через `xgate --with code.sarnas.ru/xgate-modules/dns-<name>=./modules/dns/<name>`.
 

@@ -2025,3 +2025,30 @@ routing:
 		}
 	}
 }
+
+func TestLoad_AuthConnector(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+routing:
+  rules:
+    - path_prefix: "/api/keys"
+      target_name: "api"
+      auth:
+        connector: "apikey"
+        roles: ["admin"]
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Routing.Rules) != 1 {
+		t.Fatalf("rules = %d", len(cfg.Routing.Rules))
+	}
+	auth := cfg.Routing.Rules[0].Auth
+	if auth == nil || auth.Connector != "apikey" || len(auth.Roles) != 1 || auth.Roles[0] != "admin" {
+		t.Fatalf("auth = %+v", auth)
+	}
+}

@@ -344,7 +344,9 @@ headers:
 
 `lb_policy` действует на пул правил с одинаковыми `(host, path_prefix, methods)`. `least_conn` учитывает активные запросы к таргету, `ip_hash` детерминированно выбирает по IP клиента. `retries` повторяет только методы без тела (GET/HEAD/OPTIONS/TRACE) при транспортной ошибке; 502/503/504 дополнительно считаются сбоем таргета для circuit breaker.
 
-`auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`; непустые `roles`/`roles_all` сами требуют токен, даже если глобальный `required: false`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`).
+`auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`; непустые `roles`/`roles_all` сами требуют токен, даже если глобальный `required: false`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`), `connector` (string, имя compile-time xgate-модуля `plugin.AuthConnector`).
+
+`connector` — единственный аутентификатор маршрута: JWT для него не проверяется, credentials проверяет модуль (API-ключ, introspection и т.п.). Отсутствие identity или ошибка коннектора — 401, `required: false` этого не отключает. Identity раскладывается в заголовки тем же путём, что и JWT (`claim_mappings`, `headers.claim_to_header`, `permissions`, per-route `sign_v3`), роли проверяются так же. Имя коннектора должно быть вкомпилировано, иначе `--check` и старт завершаются ошибкой.
 
 `roles` и `roles_all` читают claim `roles` токена (строка или массив строк). Если заданы оба списка, роль должна пройти оба условия: `(любая из roles) И (все из roles_all)`. Если claim `roles` отсутствует или его тип не строка и не массив строк, маршрут с требованиями ролей отвечает 401.
 
@@ -353,6 +355,18 @@ auth:
   required: true
   roles: ["admin", "support"]   # достаточно любой из двух
   roles_all: ["staff", "mfa"]   # и при этом обязательны обе
+```
+
+Маршрут с внешним коннектором:
+
+```yaml
+routing:
+  rules:
+    - path_prefix: "/api/keys"
+      target_name: "api"
+      auth:
+        connector: "apikey"     # модуль, собранный через xgate
+        roles: ["admin"]
 ```
 
 `rate_limit`: `requests_per_second` (float, token bucket), `burst` (int). `global_limit` имеет те же поля, но применяется ко всем запросам процесса, а не на IP.
