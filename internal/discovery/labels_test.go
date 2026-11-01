@@ -9,6 +9,8 @@ import (
 	"code.sarnas.ru/api-gateway/internal/config"
 )
 
+func boolPtr(v bool) *bool { return &v }
+
 func testOpts() ParseOptions {
 	return ParseOptions{
 		LabelPrefix:       "gateway",
@@ -296,7 +298,7 @@ func TestParseTarget_RouterFields(t *testing.T) {
 		{
 			name:  "auth required true",
 			extra: map[string]string{"gateway.auth.required": "true"},
-			want:  config.RoutingRule{Host: "x", PathPrefix: "/", Auth: &config.AuthRule{Required: true}},
+			want:  config.RoutingRule{Host: "x", PathPrefix: "/", Auth: &config.AuthRule{Required: boolPtr(true)}},
 		},
 		{
 			name:  "auth roles split",
@@ -319,7 +321,7 @@ func TestParseTarget_RouterFields(t *testing.T) {
 				"gateway.auth.required":    "true",
 				"gateway.auth.strip_token": "true",
 			},
-			want: config.RoutingRule{Host: "x", PathPrefix: "/", Auth: &config.AuthRule{Required: true, StripToken: &stripTrue}},
+			want: config.RoutingRule{Host: "x", PathPrefix: "/", Auth: &config.AuthRule{Required: boolPtr(true), StripToken: &stripTrue}},
 		},
 		{
 			name: "rate limit rps and burst",
@@ -391,8 +393,8 @@ func TestParseRouters_ShortFormIsDefault(t *testing.T) {
 	if r.PathPrefix != "/api/auth/login" || r.TargetName != "passport" {
 		t.Errorf("rule: got %+v", r)
 	}
-	if r.Auth == nil || r.Auth.Required {
-		t.Errorf("auth.required should be false, got %+v", r.Auth)
+	if r.Auth == nil || r.Auth.Required == nil || *r.Auth.Required {
+		t.Errorf("auth.required should be explicitly false, got %+v", r.Auth)
 	}
 }
 
@@ -424,7 +426,7 @@ func TestParseRouters_NamedRouters(t *testing.T) {
 	}
 
 	auth := byPrefix["/api/auth"]
-	if auth.Auth == nil || !auth.Auth.Required {
+	if auth.Auth == nil || auth.Auth.Required == nil || !*auth.Auth.Required {
 		t.Errorf("auth rule required: got %+v", auth.Auth)
 	}
 	if len(auth.Auth.Roles) != 2 || auth.Auth.Roles[0] != "user" {

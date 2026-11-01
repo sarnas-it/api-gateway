@@ -269,7 +269,7 @@ func buildRule(f map[string]string) config.RoutingRule {
 	if v, ok := f["auth.required"]; ok {
 		required := parseBool(v)
 		rule.Auth = ensureAuth(rule.Auth)
-		rule.Auth.Required = required
+		rule.Auth.Required = &required
 	}
 	if v, ok := f["auth.roles"]; ok {
 		rule.Auth = ensureAuth(rule.Auth)

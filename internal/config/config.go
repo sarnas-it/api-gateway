@@ -211,10 +211,28 @@ type SignV3Config struct {
 
 // AuthRule конфигурация аутентификации для роута
 type AuthRule struct {
-	Required   bool     `yaml:"required"`              // требовать ли JWT
+	// Required — требовать ли JWT на маршруте. nil наследует глобальный
+	// jwt.required; явные true/false переопределяют его.
+	Required   *bool    `yaml:"required,omitempty"`
 	Roles      []string `yaml:"roles,omitempty"`       // хотя бы одна из ролей (any-of)
 	RolesAll   []string `yaml:"roles_all,omitempty"`   // все перечисленные роли (all-of)
 	StripToken *bool    `yaml:"strip_token,omitempty"` // удалять токен (наследует глобальный если не указан)
+}
+
+// EffectiveRequired возвращает, требуется ли аутентификация на маршруте.
+// Непустые roles/roles_all сами требуют токен: иначе правило с ролями
+// молча пропускало бы анонимов при global jwt.required=false.
+func (a *AuthRule) EffectiveRequired(global bool) bool {
+	if a == nil {
+		return global
+	}
+	if len(a.Roles) > 0 || len(a.RolesAll) > 0 {
+		return true
+	}
+	if a.Required != nil {
+		return *a.Required
+	}
+	return global
 }
 
 // BasicAuthConfig конфигурация Basic аутентификации

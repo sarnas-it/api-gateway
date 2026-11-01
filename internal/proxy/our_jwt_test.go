@@ -76,7 +76,7 @@ func TestModifyRequest_OurJWTUnchanged(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/v1/anything", nil)
 	req.Header.Set("Authorization", "Bearer "+signed)
-	rule := &config.RoutingRule{Auth: &config.AuthRule{Required: true}}
+	rule := &config.RoutingRule{Auth: &config.AuthRule{Required: boolPtr(true)}}
 
 	if err := mp.modifyRequest(req, &cfg.Targets[0], rule); err != nil {
 		t.Fatalf("modifyRequest error: %v", err)
