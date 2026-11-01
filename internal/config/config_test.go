@@ -314,6 +314,33 @@ targets:
 	}
 }
 
+func TestRouting_LBPolicyValidation(t *testing.T) {
+	base := `
+targets:
+  - name: api
+    url: http://api:9001
+routing:
+  rules:
+    - path_prefix: "/"
+      target_name: api
+%s
+`
+	for _, extra := range []string{
+		"      lb_policy: bogus",
+		"      retries: -1",
+		"      retries: 6",
+	} {
+		path := writeTempConfig(t, fmt.Sprintf(base, extra))
+		if _, _, err := Load(path); err == nil {
+			t.Fatalf("expected error for %q", extra)
+		}
+	}
+	path := writeTempConfig(t, fmt.Sprintf(base, "      lb_policy: ip_hash\n      retries: 2"))
+	if _, _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAdmin_DefaultsAndValidation(t *testing.T) {
 	base := `
 targets:

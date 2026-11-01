@@ -343,6 +343,13 @@ type RoutingRule struct {
 	// аудит-вебхукам). nil — true (обратная совместимость); false — тело
 	// стримится в бэкенд без буферизации и обрезания.
 	BufferRequestBody *bool `yaml:"buffer_request_body,omitempty"`
+
+	// LBPolicy — политика выбора таргета в пуле: round_robin (по умолчанию),
+	// random, least_conn, ip_hash.
+	LBPolicy string `yaml:"lb_policy"`
+	// Retries — число повторов при транспортной ошибке для идемпотентных
+	// методов без тела (GET/HEAD/OPTIONS/TRACE). 0 — без повторов.
+	Retries int `yaml:"retries"`
 }
 
 // BufferRequestBodyEnabled — эффективное значение buffer_request_body.
@@ -1003,6 +1010,14 @@ func (c *Config) validate() error {
 		}
 		if !targetNames[rule.TargetName] {
 			return fmt.Errorf("routing rule references unknown target: %s", rule.TargetName)
+		}
+		switch rule.LBPolicy {
+		case "", "round_robin", "random", "least_conn", "ip_hash":
+		default:
+			return fmt.Errorf("routing rule lb_policy must be round_robin, random, least_conn or ip_hash, got %q", rule.LBPolicy)
+		}
+		if rule.Retries < 0 || rule.Retries > 5 {
+			return fmt.Errorf("routing rule retries must be between 0 and 5, got %d", rule.Retries)
 		}
 		// Правила, совпадающие по (host, path_prefix, methods), делят один пул
 		// балансировки. Политика пула (auth, strip_path, rate_limit) должна
