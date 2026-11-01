@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -43,13 +45,14 @@ type RouteConfig struct {
 	weights     []int
 	totalWeight int
 	counter     atomic.Uint64
+	lbPolicy    string
+	retries     int
 }
 
-// pickTarget выбирает следующий таргет пула взвешенным round-robin.
-// Нездоровые кандидаты и кандидаты с весом <= 0 пропускаются.
-// Если здоровых кандидатов с положительным весом нет — возвращает nil,
-// и вызывающая сторона отдаёт 503.
-func (rc *RouteConfig) pickTarget(cbEnabled bool) *TargetProxy {
+// pickTarget выбирает таргет пула по lb_policy. Нездоровые кандидаты и
+// кандидаты с весом <= 0 пропускаются. hashKey используется для ip_hash.
+// Если здоровых кандидатов нет — возвращает nil (вызывающая сторона отдаёт 503).
+func (rc *RouteConfig) pickTarget(cbEnabled bool, hashKey ...string) *TargetProxy {
 	if rc == nil || rc.totalWeight <= 0 {
 		return nil
 	}
@@ -64,14 +67,16 @@ func (rc *RouteConfig) pickTarget(cbEnabled bool) *TargetProxy {
 		return tp
 	}
 
+	policy := rc.lbPolicy
+	if policy == "" {
+		policy = "round_robin"
+	}
 	type candidate struct {
 		target *TargetProxy
 		weight int
 	}
 	// Half-open пробник расходуется только выбранным таргетом: кандидаты
 	// проверяются read-only (eligible), а acquire вызывается на победителе.
-	// Иначе проигравший кандидат «сжёг» бы пробник и остался навсегда
-	// исключённым, пока его не переведёт другой путь.
 	for attempt := 0; attempt <= len(rc.Targets); attempt++ {
 		healthy := make([]candidate, 0, len(rc.Targets))
 		sum := 0
@@ -87,20 +92,41 @@ func (rc *RouteConfig) pickTarget(cbEnabled bool) *TargetProxy {
 			return nil
 		}
 
-		n := rc.counter.Add(1) - 1
-		pos := int(n % uint64(sum))
 		chosen := healthy[len(healthy)-1].target
-		for _, c := range healthy {
-			if pos < c.weight {
-				chosen = c.target
-				break
+		switch policy {
+		case "random":
+			chosen = healthy[rand.IntN(len(healthy))].target
+		case "least_conn":
+			best := healthy[0].target
+			bestActive := best.active.Load()
+			for _, c := range healthy[1:] {
+				if a := c.target.active.Load(); a < bestActive {
+					best, bestActive = c.target, a
+				}
 			}
-			pos -= c.weight
+			chosen = best
+		case "ip_hash":
+			key := ""
+			if len(hashKey) > 0 {
+				key = hashKey[0]
+			}
+			h := fnv.New64a()
+			_, _ = h.Write([]byte(key))
+			chosen = healthy[int(h.Sum64()%uint64(len(healthy)))].target
+		default: // round_robin
+			n := rc.counter.Add(1) - 1
+			pos := int(n % uint64(sum))
+			for _, c := range healthy {
+				if pos < c.weight {
+					chosen = c.target
+					break
+				}
+				pos -= c.weight
+			}
 		}
 		if chosen.acquire(cbEnabled) {
 			return chosen
 		}
-		// Пробник забрал параллельный запрос — пересчитываем кандидатов.
 	}
 	return nil
 }
@@ -140,6 +166,7 @@ type TargetProxy struct {
 	cbTimeout        time.Duration
 
 	halfOpenProbe atomic.Bool
+	active        atomic.Int64
 }
 
 const (
@@ -512,11 +539,14 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if mp.config.Load().App.CircuitBreaker {
-				// Получить любой HTTP-ответ от таргета, даже 5xx, значит транспорт
-				// исправен — это уровень приложения на бэкенде, а не недоступность
-				// таргета. Пробой цепи должны вызывать только ошибки транспорта,
-				// которые попадают в ErrorHandler ниже.
-				target.recordCall(nil)
+				// 502/503/504 — признак недоступности/перегрузки таргета;
+				// остальные ответы (включая 500) не открывают цепь.
+				switch resp.StatusCode {
+				case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+					target.recordCall(fmt.Errorf("upstream status %d", resp.StatusCode))
+				default:
+					target.recordCall(nil)
+				}
 			}
 			mp.setCORSHeaders(resp.Header, resp.Request)
 			mp.logger.Debug("Received response from target",
@@ -538,6 +568,28 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 			if errors.As(err, &maxErr) {
 				http.Error(rw, "request body too large", http.StatusRequestEntityTooLarge)
 				return
+			}
+			if rc, ok := req.Context().Value(ctxKeyRoute).(*RouteConfig); ok && rc != nil && retryableMethod(req.Method) {
+				attempt, _ := req.Context().Value(ctxKeyRetryAttempt).(int)
+				if attempt < rc.retries {
+					if next := rc.pickTarget(mp.config.Load().CircuitBreaker, mp.clientIP(req)); next != nil {
+						base := context.WithoutCancel(req.Context())
+						cancel := func() {}
+						if next.timeout > 0 {
+							base, cancel = context.WithTimeout(base, next.timeout)
+						}
+						defer cancel()
+						ctx := context.WithValue(base, ctxKeyRetryAttempt, attempt+1)
+						mp.logger.Warn("Retrying request after transport error",
+							zap.String("from", target.config.Name),
+							zap.String("to", next.config.Name),
+							zap.Int("attempt", attempt+1),
+							zap.Error(err),
+						)
+						next.reverseProxy.ServeHTTP(rw, req.WithContext(ctx))
+						return
+					}
+				}
 			}
 			http.Error(rw, err.Error(), http.StatusBadGateway)
 		},
@@ -858,7 +910,18 @@ func extractRoles(claims jwt.MapClaims) (map[string]bool, error) {
 // verbatim, exactly as a reverse proxy must. It also streams the response
 // body instead of buffering it, so long-lived responses (e.g. chatcom's SSE
 // comment stream) aren't held until the upstream closes the connection.
+// retryableMethod — только методы без тела: повтор безопасен без replay.
+func retryableMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	return false
+}
+
 func (mp *MultiProxy) proxyRequest(w http.ResponseWriter, r *http.Request, target *TargetProxy, remainingPath string, bodyLimit int64) {
+	target.active.Add(1)
+	defer target.active.Add(-1)
 	if remainingPath == "" {
 		remainingPath = "/"
 	}
@@ -1194,7 +1257,7 @@ func (mp *MultiProxy) rebuildRouteConfigs(cfg *config.Config) {
 		key := config.RuleRouteKey(*rule)
 		rc := groups[key]
 		if rc == nil {
-			rc = &RouteConfig{Rule: rule}
+			rc = &RouteConfig{Rule: rule, lbPolicy: rule.LBPolicy, retries: rule.Retries}
 			if rule.RateLimit != nil {
 				rc.RateLimit = NewIPRateLimiter(rule.RateLimit.RequestsPerSecond, rule.RateLimit.Burst)
 			}

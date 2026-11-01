@@ -31,6 +31,8 @@ const (
 	ctxKeyRequestBody         contextKey = "request_body"
 	ctxKeyResponseBody        contextKey = "response_body"
 	ctxKeyResponseContentType contextKey = "response_content_type"
+	ctxKeyRoute               contextKey = "route_config"
+	ctxKeyRetryAttempt        contextKey = "retry_attempt"
 )
 
 // requestIDs хранит request_id и trace_id одним значением контекста —
@@ -281,7 +283,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		rc := mp.findRouteConfig(rule)
 		var targetProxy *TargetProxy
 		if rc != nil {
-			targetProxy = rc.pickTarget(cbEnabled)
+			targetProxy = rc.pickTarget(cbEnabled, mp.clientIP(r))
 		} else {
 			mp.mu.RLock()
 			targetProxy = mp.targets[target.Name]
@@ -413,6 +415,11 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			)
 		}
 
+		if rc != nil && rc.retries > 0 {
+			ctx := context.WithValue(r.Context(), ctxKeyRoute, rc)
+			ctx = context.WithValue(ctx, ctxKeyRetryAttempt, 0)
+			r = r.WithContext(ctx)
+		}
 		mp.proxyRequest(rw, r, targetProxy, remainingPath, effectiveBodyLimit(mp.config.Load().Server.EffectiveMaxRequestBodySize(), rule))
 
 		// Передаём захваченное тело ответа издателю (on_response webhooks).

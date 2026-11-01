@@ -300,6 +300,8 @@ headers:
 | `target_name` | string | — | Имя таргета; обязателен и должен существовать | `api` |
 | `methods` | []string | все | Фильтр HTTP-методов (регистр не важен) | `["GET", "POST"]` |
 | `strip_path` | bool | `false` | Удалять префикс при проксировании | `true` |
+| `lb_policy` | string | `round_robin` | Политика пула: `round_robin`, `random`, `least_conn`, `ip_hash` | `least_conn` |
+| `retries` | int | `0` | Повторы при транспортной ошибке для GET/HEAD/OPTIONS/TRACE, 0..5 | `1` |
 | `auth` | object | нет | Аутентификация маршрута | см. ниже |
 | `rate_limit` | object | нет | Лимит маршрута | см. ниже |
 | `max_request_body_size` | int | лимит сервера | Лимит тела запроса для маршрута, байты; `0` — без лимита | `536870912` |
@@ -307,6 +309,8 @@ headers:
 | `write_timeout` | duration | `server.write_timeout` | Дедлайн записи ответа для маршрута | `1h` |
 | `preserve_host` | bool | `false` | Передавать бэкенду исходный `Host` (по умолчанию — host таргета) | `true` |
 | `buffer_request_body` | bool | `true` | Читать тело в память (нужно аудит-вебхукам). `false` — стриминг без обрезания | `false` |
+
+`lb_policy` действует на пул правил с одинаковыми `(host, path_prefix, methods)`. `least_conn` учитывает активные запросы к таргету, `ip_hash` детерминированно выбирает по IP клиента. `retries` повторяет только методы без тела (GET/HEAD/OPTIONS/TRACE) при транспортной ошибке; 502/503/504 дополнительно считаются сбоем таргета для circuit breaker.
 
 `auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`; непустые `roles`/`roles_all` сами требуют токен, даже если глобальный `required: false`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`).
 
