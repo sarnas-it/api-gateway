@@ -115,6 +115,11 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `redirect_http` | bool | `false` | Редиректит HTTP на HTTPS; `/health` и `/ready` на HTTP-порту отвечают 200 | `true` |
 | `worker_port` | int | `0` | Порт отдельного mTLS-листенера для `/api/v1/workers/*`; `0` — выключен | `8444` |
 | `worker_client_ca_file` | string | — | PEM-файл CA (один или несколько сертификатов) для проверки клиентских сертификатов; обязателен при `worker_port > 0` | `/etc/api-gateway/worker-ca.pem` |
+| `min_version` | string | `1.2` | Минимальная версия TLS: `1.2` или `1.3` | `1.3` |
+| `cipher_suites` | []string | — | TLS 1.0–1.2 cipher suites по именам Go; TLS 1.3 не настраивается | `["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]` |
+| `curves` | []string | — | Кривые: `X25519`, `P-256`, `P-384`, `P-521` | `["X25519", "P-256"]` |
+| `client_auth` | string | `none` | mTLS на основном листенере: `none`, `request`, `require`, `verify` | `verify` |
+| `client_ca_file` | string | — | PEM-файл CA для клиентских сертификатов; обязателен при `client_auth: verify` | `/etc/api-gateway/clients-ca.pem` |
 | `dns_provider` | string | `""` | Включает ACME DNS-01 для wildcard; сейчас поддерживается `regru` | `regru` |
 | `dns_username` | string | `""` | Логин API reg.ru; секрет лучше подставлять из env | `${REGRU_USER}` |
 | `dns_password` | string | `""` | Пароль API reg.ru; секрет лучше подставлять из env | `${REGRU_PASSWORD}` |
@@ -175,6 +180,11 @@ static:
 | `strip_prefix` | bool | `false` | Удалять префикс при проксировании | `false` |
 | `weight` | int | `1`, если ключ не задан | Вес в пуле маршрута: `nil` — 1, `0` и отрицательные исключают таргет, `>0` — вес | `2` |
 | `health_check` | string | `""` | URL health-проверки; работает при `application.health_check: true` | `http://127.0.0.1:9001/health` |
+| `tls` | object | нет | TLS к HTTPS-бэкенду (только для `https://` URL) | см. ниже |
+| `tls.ca_file` | string | `""` | PEM-файл CA для проверки сертификата бэкенда | `/etc/api-gateway/backend-ca.pem` |
+| `tls.server_name` | string | `""` | SNI/имя для проверки сертификата | `internal.example` |
+| `tls.insecure_skip_verify` | bool | `false` | Не проверять сертификат; взаимоисключающе с `ca_file` | `false` |
+| `tls.cert_file` / `tls.key_file` | string | `""` | Клиентский сертификат для mTLS к бэкенду; задаются парой | `/etc/api-gateway/client.pem` |
 
 **Семантика `weight`.** Таргеты, чьи правила совпадают по `(host, path_prefix, methods)`, образуют один пул и распределяются взвешенным round-robin по здоровым кандидатам. Отсутствие ключа `weight` — это вес 1, а явный `weight: 0` (или отрицательный) **исключает** таргет из выбора. Различайте эти два случая.
 

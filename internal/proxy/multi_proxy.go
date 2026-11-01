@@ -396,6 +396,21 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 		totalIdle = perHost
 	}
 
+	transport := &http.Transport{
+		MaxIdleConns:        totalIdle,
+		MaxIdleConnsPerHost: perHost,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  false,
+	}
+	if targetCfg.TLS != nil {
+		upstreamTLS, err := buildUpstreamTLS(targetCfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("target %s TLS: %w", targetCfg.Name, err)
+		}
+		transport.TLSClientConfig = upstreamTLS
+		transport.ForceAttemptHTTP2 = true
+	}
+
 	tp := &TargetProxy{
 		config:           targetCfg,
 		targetURL:        targetURL,
@@ -404,12 +419,7 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 		failureThreshold: defaultFailureThreshold,
 		cbTimeout:        defaultCBTimeout,
 		timeout:          targetCfg.Timeout,
-		transport: &http.Transport{
-			MaxIdleConns:        totalIdle,
-			MaxIdleConnsPerHost: perHost,
-			IdleConnTimeout:     90 * time.Second,
-			DisableCompression:  false,
-		},
+		transport:        transport,
 	}
 	tp.reverseProxy = mp.newReverseProxy(tp)
 
