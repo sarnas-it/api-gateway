@@ -16,7 +16,7 @@ RUN go mod download
 # Копируем код и собираем
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-w -s -X github.com/basili4-1982/api-gateway/internal/proxy.GitSHA=${GIT_SHA} -X github.com/basili4-1982/api-gateway/internal/proxy.BuildTime=${BUILD_TIME} -X github.com/basili4-1982/api-gateway/internal/proxy.BuildRunID=${BUILD_RUN_ID}" -trimpath -o api-gateway ./cmd/
+    go build -ldflags="-w -s -X code.sarnas.ru/api-gateway/internal/proxy.GitSHA=${GIT_SHA} -X code.sarnas.ru/api-gateway/internal/proxy.BuildTime=${BUILD_TIME} -X code.sarnas.ru/api-gateway/internal/proxy.BuildRunID=${BUILD_RUN_ID}" -trimpath -o api-gateway ./cmd/gateway/
 
 FROM scratch
 

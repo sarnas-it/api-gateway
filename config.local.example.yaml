@@ -20,7 +20,7 @@ server:
 # admin:
 #   enabled: true
 #   addr: "127.0.0.1:2019"
-#   token: "${ADMIN_TOKEN}"
+#   token: "$${ADMIN_TOKEN}"
 
 application:
   env: "dev"
@@ -52,8 +52,8 @@ application:
 #   # client_ca_file: "/etc/api-gateway/clients-ca.pem"
 #   # Wildcard-домены: DNS-01 через API reg.ru (секреты — из env).
 #   # dns_provider: "regru"
-#   # dns_username: "${REGRU_USER}"
-#   # dns_password: "${REGRU_PASSWORD}"
+#   # dns_username: "$${REGRU_USER}"
+#   # dns_password: "$${REGRU_PASSWORD}"
 #   # dns_propagation_timeout: 5m
 #   # Отдельный mTLS-листенер для /api/v1/workers/*; 0 — выключен.
 #   worker_port: 8444

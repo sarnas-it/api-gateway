@@ -23,7 +23,7 @@ make all            # fmt + vet + lint + build + test
 конфиг проверяйте флагом `-check` (`-strict` считает ошибкой неизвестные ключи):
 
 ```bash
-go run ./cmd/ -config config.yaml -check -strict
+go run ./cmd/gateway/ -config config.yaml -check -strict
 ```
 
 ## Коммиты и PR
