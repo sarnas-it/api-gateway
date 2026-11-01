@@ -28,6 +28,10 @@ const (
 	// jwksUnknownKidCooldown — окно, в течение которого повторные проверки с
 	// тем же неизвестным kid не инициируют новое принудительное обновление.
 	jwksUnknownKidCooldown = 30 * time.Second
+	// jwksErrorTTL — окно негативного кэша неудачной загрузки при пустом кэше.
+	// Без него при недоступном IdP каждый запрос (в том числе пришедший после
+	// завершения чужой попытки) заново шёл бы в сеть и висел до таймаута.
+	jwksErrorTTL = time.Second
 	// jwksNegativeCacheMax — предел размера negative-кэша неизвестных kid.
 	jwksNegativeCacheMax = 1024
 )
@@ -89,6 +93,7 @@ type jwksCache struct {
 	expiresAt time.Time
 	gen       uint64               // растёт после каждой попытки загрузки
 	lastErr   error                // результат последней неудачной попытки
+	errUntil  time.Time            // до какого времени отдавать lastErr без сети
 	neg       map[string]time.Time // kid -> до какого времени не форсить refresh
 }
 
@@ -143,10 +148,18 @@ func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 	keys := c.keys
 	fresh := keys != nil && time.Now().Before(c.expiresAt)
 	gen := c.gen
+	lastErr := c.lastErr
+	errUntil := c.errUntil
 	c.mu.RUnlock()
 
 	if fresh && !force {
 		return keys, nil
+	}
+
+	// Кэша ключей нет, а недавняя попытка уже упала: не идём в сеть повторно
+	// (иначе недоступный IdP превращается в очередь запросов с таймаутом).
+	if keys == nil && lastErr != nil && time.Now().Before(errUntil) {
+		return nil, lastErr
 	}
 
 	c.fetchMu.Lock()
@@ -157,7 +170,7 @@ func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 	keys = c.keys
 	fresh = keys != nil && time.Now().Before(c.expiresAt)
 	curGen := c.gen
-	lastErr := c.lastErr
+	lastErr = c.lastErr
 	c.mu.RUnlock()
 
 	if curGen != gen {
@@ -170,6 +183,13 @@ func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 		}
 	}
 
+	c.mu.RLock()
+	errUntil = c.errUntil
+	c.mu.RUnlock()
+	if keys == nil && lastErr != nil && time.Now().Before(errUntil) {
+		return nil, lastErr
+	}
+
 	if fresh && !force {
 		return keys, nil
 	}
@@ -179,6 +199,7 @@ func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 		c.mu.Lock()
 		c.gen++
 		c.lastErr = err
+		c.errUntil = time.Now().Add(jwksErrorTTL)
 		c.mu.Unlock()
 		if keys != nil {
 			c.logger.Warn("jwks: refresh failed, using cached keys",
@@ -193,6 +214,7 @@ func (c *jwksCache) ensureLoaded(force bool) (*jwksKeys, error) {
 	c.expiresAt = time.Now().Add(jwksCacheTTL)
 	c.gen++
 	c.lastErr = nil
+	c.errUntil = time.Time{}
 	c.mu.Unlock()
 
 	c.logger.Debug("jwks: keys loaded",
