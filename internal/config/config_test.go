@@ -313,6 +313,32 @@ targets:
 	}
 }
 
+func TestCompression_DefaultsAndValidation(t *testing.T) {
+	base := `
+targets:
+  - name: api
+    url: http://api:9001
+compression:
+%s
+`
+	path := writeTempConfig(t, fmt.Sprintf(base, "  enabled: true\n  level: 0\n  min_size: 0"))
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Compression.Level != 5 {
+		t.Errorf("default compression level = %d, want 5", cfg.Compression.Level)
+	}
+	if cfg.Compression.MinSize != 1024 {
+		t.Errorf("default compression min_size = %d, want 1024", cfg.Compression.MinSize)
+	}
+
+	path = writeTempConfig(t, fmt.Sprintf(base, "  enabled: true\n  level: 99"))
+	if _, _, err := Load(path); err == nil {
+		t.Fatal("expected error for compression level outside 1..9")
+	}
+}
+
 func TestValidate_TrustedProxies(t *testing.T) {
 	base := `
 targets:
