@@ -45,6 +45,55 @@ func TestRenderMain(t *testing.T) {
 	}
 }
 
+func TestManifestAndLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "xgate.yaml")
+	data := `
+gateway:
+  source: .
+  output: ./gw
+modules:
+  - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
+  - path: github.com/acme/plugin
+    version: v1.2.3
+    replacement: ../plugin
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mf, err := loadManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mf.Gateway.Output != "./gw" || len(mf.Modules) != 2 {
+		t.Fatalf("manifest = %+v", mf)
+	}
+	spec, err := specFromManifest(mf.Modules[1], dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Version != "v1.2.3" || !filepath.IsAbs(spec.Replacement) {
+		t.Fatalf("spec = %+v", spec)
+	}
+
+	if _, err := mergeSpecs([]moduleSpec{{Path: "a"}}, []moduleSpec{{Path: "a"}}); err == nil {
+		t.Fatal("duplicate modules must fail")
+	}
+
+	lock := filepath.Join(dir, "xgate.lock")
+	if err := writeLock(lock, dir, "code.sarnas.ru/api-gateway", []moduleSpec{spec}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "code.sarnas.ru/api-gateway/plugins/dns/cloudflare") &&
+		!strings.Contains(string(raw), "github.com/acme/plugin") {
+		t.Fatalf("lock = %s", raw)
+	}
+}
+
 func TestModuleRoot(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/gw\n\ngo 1.26.9\n"), 0o600); err != nil {

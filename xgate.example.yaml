@@ -1,0 +1,12 @@
+gateway:
+  source: .
+  output: ./bin/api-gateway-custom
+
+modules:
+  # libdns-провайдер для DNS-01. Раскомментируйте и передайте CF_API_TOKEN.
+  # - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
+
+  # Локальный форк модуля:
+  # - path: github.com/acme/gateway-module
+  #   version: v1.0.0
+  #   replacement: ../gateway-module

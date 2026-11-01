@@ -49,6 +49,30 @@ tls:
 Сборка идёт во временном Go-модуле с `replace` на локальный исходник шлюза,
 поэтому `go.mod` рабочего репозитория не меняется.
 
+### Манифест и lock
+
+Вместо десятка `--with` можно держать `xgate.yaml` (пример — `xgate.example.yaml`):
+
+```yaml
+gateway:
+  source: .
+  output: ./bin/api-gateway-custom
+modules:
+  - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
+  - path: github.com/acme/gateway-module
+    version: v1.0.0
+    replacement: ../gateway-module
+```
+
+```bash
+xgate build --manifest xgate.yaml
+xgate list --manifest xgate.yaml
+```
+
+После сборки рядом пишется `xgate.lock` с `source_sha` и выбранными модулями;
+`--lock` меняет путь, `--no-lock` отключает запись. `xgate list` показывает
+манифест и, если lock существует, зафиксированные версии.
+
 ## Как написать модуль
 
 Модуль — обычный Go-пакет, который регистрируется в `init()`:
