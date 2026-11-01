@@ -21,6 +21,7 @@ import (
 
 const regruAPIBase = "https://api.reg.ru/api/regru2"
 
+// shortcut: DNS-01 только через reg.ru; другой провайдер потребует libdns-адаптер; добавить, если домены уйдут с reg.ru.
 // regruDNS — минимальный libdns-провайдер для reg.ru: TXT-записи для
 // ACME DNS-01. Отдельный клиент, чтобы не тянуть приватный regru-go в CI.
 type regruDNS struct {
