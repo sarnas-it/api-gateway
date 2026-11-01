@@ -278,6 +278,10 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 		)
 	}
 
+	// Сжатие — снаружи всей цепочки: так оно покрывает и прокси, и статику,
+	// и ответы middleware (401/404/429).
+	handler = compressionMiddleware(mp)(handler)
+
 	mp.handler = handler
 
 	return mp, nil

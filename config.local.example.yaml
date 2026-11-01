@@ -4,6 +4,12 @@
 server:
   port: 8080
 
+# Gzip-сжатие ответов (выключено по умолчанию).
+# compression:
+#   enabled: true
+#   level: 5
+#   min_size: 1024
+
 application:
   env: "dev"
   health_check: false

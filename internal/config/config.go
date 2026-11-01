@@ -29,6 +29,16 @@ type Config struct {
 	Identity    IdentityConfig    `yaml:"identity"`
 	Webhooks    []WebhookConfig   `yaml:"webhooks"`
 	Discovery   *DiscoveryConfig  `yaml:"discovery,omitempty"`
+	Compression CompressionConfig `yaml:"compression"`
+}
+
+// CompressionConfig — gzip-сжатие ответов.
+type CompressionConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Level — уровень gzip 1..9; 0 → 5.
+	Level int `yaml:"level"`
+	// MinSize — минимальный известный Content-Length для сжатия; 0 → 1024.
+	MinSize int `yaml:"min_size"`
 }
 
 // DiscoveryConfig конфигурация service discovery (Docker/Podman по labels).
@@ -634,6 +644,12 @@ func (c *Config) setDefaults() {
 		size := defaultMaxRequestBodySize
 		c.Server.MaxRequestBodySize = &size
 	}
+	if c.Compression.Level == 0 {
+		c.Compression.Level = 5
+	}
+	if c.Compression.MinSize == 0 {
+		c.Compression.MinSize = 1024
+	}
 
 	if c.TLS != nil && c.TLS.Enabled {
 		if c.TLS.Port == 0 {
@@ -789,6 +805,14 @@ func validHTTPMethodToken(m string) bool {
 func (c *Config) validate() error {
 	if _, err := ParseTrustedProxies(c.Server.TrustedProxies); err != nil {
 		return fmt.Errorf("server.trusted_proxies: %w", err)
+	}
+	if c.Compression.Enabled {
+		if c.Compression.Level < 1 || c.Compression.Level > 9 {
+			return fmt.Errorf("compression.level must be between 1 and 9, got %d", c.Compression.Level)
+		}
+		if c.Compression.MinSize < 0 {
+			return fmt.Errorf("compression.min_size must be >= 0, got %d", c.Compression.MinSize)
+		}
 	}
 
 	discoveryEnabled := c.Discovery != nil && c.Discovery.Enabled
