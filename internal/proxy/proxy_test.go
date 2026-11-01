@@ -390,11 +390,15 @@ func TestCreateTargetProxy_UsesConfiguredConnPool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tp.transport.MaxIdleConnsPerHost != 250 {
-		t.Errorf("MaxIdleConnsPerHost = %d, want 250", tp.transport.MaxIdleConnsPerHost)
+	httpTransport, ok := tp.transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", tp.transport)
 	}
-	if tp.transport.MaxIdleConns != 500 {
-		t.Errorf("MaxIdleConns = %d, want 500 (250 * 2 targets)", tp.transport.MaxIdleConns)
+	if httpTransport.MaxIdleConnsPerHost != 250 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 250", httpTransport.MaxIdleConnsPerHost)
+	}
+	if httpTransport.MaxIdleConns != 500 {
+		t.Errorf("MaxIdleConns = %d, want 500 (250 * 2 targets)", httpTransport.MaxIdleConns)
 	}
 }
 

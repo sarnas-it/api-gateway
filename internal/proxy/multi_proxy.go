@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,6 +24,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/time/rate"
 
 	"code.sarnas.ru/api-gateway/internal/config"
@@ -155,7 +158,7 @@ type TargetProxy struct {
 	healthCheck  *HealthChecker
 	mu           sync.RWMutex
 	healthy      bool
-	transport    *http.Transport
+	transport    http.RoundTripper
 	timeout      time.Duration
 	reverseProxy *httputil.ReverseProxy
 
@@ -423,19 +426,30 @@ func (mp *MultiProxy) createTargetProxy(targetCfg *config.TargetConfig, healthCh
 		totalIdle = perHost
 	}
 
-	transport := &http.Transport{
-		MaxIdleConns:        totalIdle,
-		MaxIdleConnsPerHost: perHost,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  false,
-	}
-	if targetCfg.TLS != nil {
-		upstreamTLS, err := buildUpstreamTLS(targetCfg.TLS)
-		if err != nil {
-			return nil, fmt.Errorf("target %s TLS: %w", targetCfg.Name, err)
+	var transport http.RoundTripper
+	if targetCfg.Protocol == "h2c" {
+		transport = &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, addr)
+			},
 		}
-		transport.TLSClientConfig = upstreamTLS
-		transport.ForceAttemptHTTP2 = true
+	} else {
+		httpTransport := &http.Transport{
+			MaxIdleConns:        totalIdle,
+			MaxIdleConnsPerHost: perHost,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression:  false,
+		}
+		if targetCfg.TLS != nil {
+			upstreamTLS, err := buildUpstreamTLS(targetCfg.TLS)
+			if err != nil {
+				return nil, fmt.Errorf("target %s TLS: %w", targetCfg.Name, err)
+			}
+			httpTransport.TLSClientConfig = upstreamTLS
+			httpTransport.ForceAttemptHTTP2 = true
+		}
+		transport = httpTransport
 	}
 
 	tp := &TargetProxy{
@@ -1341,6 +1355,14 @@ func (mp *MultiProxy) Status() map[string]any {
 }
 
 // Start запускает HTTP или HTTPS сервер (с автосертификатами Let's Encrypt)
+// httpHandler оборачивает основной handler в h2c, если он включён.
+func (mp *MultiProxy) httpHandler() http.Handler {
+	if mp.config.Load().Server.H2C {
+		return h2c.NewHandler(mp, &http2.Server{})
+	}
+	return mp
+}
+
 func (mp *MultiProxy) Start() error {
 	if mp.config.Load().TLS != nil && mp.config.Load().TLS.Enabled {
 		return mp.startTLS()
@@ -1348,9 +1370,10 @@ func (mp *MultiProxy) Start() error {
 
 	addr := fmt.Sprintf(":%d", mp.config.Load().Server.Port)
 
+	handler := mp.httpHandler()
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mp,
+		Handler:      handler,
 		ReadTimeout:  mp.config.Load().Server.ReadTimeout,
 		WriteTimeout: mp.config.Load().Server.WriteTimeout,
 		IdleTimeout:  mp.config.Load().Server.IdleTimeout,

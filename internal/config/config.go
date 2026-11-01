@@ -239,6 +239,8 @@ type ServerConfig struct {
 	// TrustedProxies — IP/CIDR прокси, которым доверяем X-Forwarded-For.
 	// Пусто → XFF игнорируется, клиентский IP берётся из RemoteAddr.
 	TrustedProxies []string `yaml:"trusted_proxies"`
+	// H2C включает cleartext HTTP/2 на обычном HTTP-листенере (без TLS).
+	H2C bool `yaml:"h2c"`
 }
 
 // ParseTrustedProxies разбирает список IP/CIDR доверенных прокси. Одиночный
@@ -296,6 +298,9 @@ type TargetConfig struct {
 	HealthCheck string `yaml:"health_check"` // URL для проверки здоровья
 	// TLS — настройки TLS к HTTPS-бэкенду (свой CA, mTLS, skip-verify).
 	TLS *UpstreamTLSConfig `yaml:"tls,omitempty"`
+	// Protocol — протокол к бэкенду: "" (HTTP/1.1) или "h2c" (cleartext HTTP/2,
+	// в том числе gRPC). h2c требует http:// URL.
+	Protocol string `yaml:"protocol"`
 }
 
 // EffectiveWeight возвращает действующий вес таргета: nil трактуется как 1
@@ -988,6 +993,14 @@ func (c *Config) validate() error {
 		u, err := url.Parse(target.URL)
 		if err != nil {
 			return fmt.Errorf("target.url is invalid for target %s: %w", target.Name, err)
+		}
+		switch target.Protocol {
+		case "", "h2c":
+		default:
+			return fmt.Errorf("target %s: protocol must be empty or h2c, got %q", target.Name, target.Protocol)
+		}
+		if target.Protocol == "h2c" && u.Scheme != "http" {
+			return fmt.Errorf("target %s: h2c requires an http url", target.Name)
 		}
 		if target.TLS != nil {
 			if u.Scheme != "https" {
