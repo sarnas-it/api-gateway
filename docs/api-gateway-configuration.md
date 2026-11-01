@@ -332,7 +332,7 @@ headers:
 | `target_name` | string | — | Имя таргета; обязателен и должен существовать | `api` |
 | `methods` | []string | все | Фильтр HTTP-методов (регистр не важен) | `["GET", "POST"]` |
 | `strip_path` | bool | `false` | Удалять префикс при проксировании | `true` |
-| `lb_policy` | string | `round_robin` | Политика пула: `round_robin`, `random`, `least_conn`, `ip_hash` | `least_conn` |
+| `lb_policy` | string | `round_robin` | Политика пула: `round_robin`, `random`, `least_conn`, `ip_hash`, `sticky` | `least_conn` |
 | `retries` | int | `0` | Повторы при транспортной ошибке для GET/HEAD/OPTIONS/TRACE, 0..5 | `1` |
 | `auth` | object | нет | Аутентификация маршрута | см. ниже |
 | `rate_limit` | object | нет | Лимит маршрута | см. ниже |
@@ -343,6 +343,8 @@ headers:
 | `buffer_request_body` | bool | `true` | Читать тело в память (нужно аудит-вебхукам). `false` — стриминг без обрезания | `false` |
 
 `lb_policy` действует на пул правил с одинаковыми `(host, path_prefix, methods)`. `least_conn` учитывает активные запросы к таргету, `ip_hash` детерминированно выбирает по IP клиента. `retries` повторяет только методы без тела (GET/HEAD/OPTIONS/TRACE) при транспортной ошибке; 502/503/504 дополнительно считаются сбоем таргета для circuit breaker.
+
+`sticky` привязывает клиента к таргету через cookie `xg_target`: значение — имя таргета под HMAC-подписью процесса (имя не читается клиентом, подделать нельзя). Cookie ставится на первом выборе и обновляется, только если привязка недействительна: таргет убран из пула, нездоров, подпись неверна. Ключ живёт в памяти: после рестарта шлюза клиенты один раз перепривязываются. Атрибуты: `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` при TLS.
 
 `auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`; непустые `roles`/`roles_all` сами требуют токен, даже если глобальный `required: false`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`), `connector` (string, имя compile-time xgate-модуля `plugin.AuthConnector`).
 

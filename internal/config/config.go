@@ -366,7 +366,8 @@ type RoutingRule struct {
 	BufferRequestBody *bool `yaml:"buffer_request_body,omitempty"`
 
 	// LBPolicy — политика выбора таргета в пуле: round_robin (по умолчанию),
-	// random, least_conn, ip_hash.
+	// random, least_conn, ip_hash, sticky (привязка клиента к таргету через
+	// подписанную cookie).
 	LBPolicy string `yaml:"lb_policy"`
 	// Retries — число повторов при транспортной ошибке для идемпотентных
 	// методов без тела (GET/HEAD/OPTIONS/TRACE). 0 — без повторов.
@@ -1060,9 +1061,9 @@ func (c *Config) validate() error {
 			return fmt.Errorf("routing rule references unknown target: %s", rule.TargetName)
 		}
 		switch rule.LBPolicy {
-		case "", "round_robin", "random", "least_conn", "ip_hash":
+		case "", "round_robin", "random", "least_conn", "ip_hash", "sticky":
 		default:
-			return fmt.Errorf("routing rule lb_policy must be round_robin, random, least_conn or ip_hash, got %q", rule.LBPolicy)
+			return fmt.Errorf("routing rule lb_policy must be round_robin, random, least_conn, ip_hash or sticky, got %q", rule.LBPolicy)
 		}
 		if rule.Retries < 0 || rule.Retries > 5 {
 			return fmt.Errorf("routing rule retries must be between 0 and 5, got %d", rule.Retries)

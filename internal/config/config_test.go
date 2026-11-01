@@ -374,9 +374,11 @@ routing:
 			t.Fatalf("expected error for %q", extra)
 		}
 	}
-	path := writeTempConfig(t, fmt.Sprintf(base, "      lb_policy: ip_hash\n      retries: 2"))
-	if _, _, err := Load(path); err != nil {
-		t.Fatal(err)
+	for _, policy := range []string{"ip_hash", "sticky"} {
+		path := writeTempConfig(t, fmt.Sprintf(base, "      lb_policy: "+policy+"\n      retries: 2"))
+		if _, _, err := Load(path); err != nil {
+			t.Fatalf("%s: %v", policy, err)
+		}
 	}
 }
 

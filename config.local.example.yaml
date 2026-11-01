@@ -91,6 +91,8 @@ targets:
     strip_prefix: false
 
 routing:
+  # lb_policy: round_robin | random | least_conn | ip_hash | sticky
+  # sticky привязывает клиента к таргету cookie xg_target (сессионные бэкенды).
   rules:
     - path_prefix: "/api/v1/auth/login"
       target_name: "auth-api"
