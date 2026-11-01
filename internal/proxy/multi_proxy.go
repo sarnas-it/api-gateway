@@ -204,6 +204,8 @@ type MultiProxy struct {
 	certmagicStop      func()
 	// middleware оборачивает публичный обработчик; задаётся до Start.
 	middleware func(http.Handler) http.Handler
+	// authConnectors — внешние аутентификаторы по именам модулей.
+	authConnectors map[string]AuthConnector
 }
 
 // HealthChecker проверяет здоровье таргета
@@ -656,6 +658,17 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		}
 	}
 
+	// Маршрут с auth.connector аутентифицируется только выбранным модулем:
+	// JWT-путь для него не выполняется, иначе «свой» токен обходил бы
+	// требование внешнего коннектора. Проверка идёт до authRequired, потому
+	// что коннектор может не использовать Authorization вовсе.
+	if rule != nil && rule.Auth != nil && rule.Auth.Connector != "" {
+		if err := mp.applyConnectorIdentity(r, rule.Auth.Connector, rule); err != nil {
+			return err
+		}
+		return mp.finishRequestHeaders(r, stripToken)
+	}
+
 	if authHeader == "" && authRequired {
 		return fmt.Errorf("missing authorization token")
 	}
@@ -719,6 +732,64 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
 	}
 
+	return nil
+}
+
+// finishRequestHeaders — общий хвост modifyRequest для путей, которые
+// аутентифицируют запрос сами (auth-коннектор): add_headers, strip_token, XFF.
+func (mp *MultiProxy) finishRequestHeaders(r *http.Request, stripToken bool) error {
+	for header, value := range mp.config.Load().Headers.AddHeaders {
+		r.Header.Set(header, value)
+	}
+
+	if stripToken {
+		r.Header.Del("Authorization")
+	}
+
+	if clientIP := r.Header.Get("X-Forwarded-For"); clientIP == "" {
+		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
+	}
+
+	return nil
+}
+
+// AuthConnector — внешний аутентификатор, подключённый compile-time модулем.
+// Ядро не импортирует pkg/plugin: коннекторы передаёт pkg/app.
+type AuthConnector interface {
+	Authenticate(r *http.Request) (map[string]any, error)
+}
+
+// SetAuthConnectors задаёт коннекторы по именам модулей. Вызывать до старта.
+func (mp *MultiProxy) SetAuthConnectors(connectors map[string]AuthConnector) {
+	mp.authConnectors = connectors
+}
+
+// applyConnectorIdentity аутентифицирует запрос выбранным модулем и
+// проставляет identity-заголовки тем же путём, что и JWT: claim_to_header,
+// X-User-Signature, X-User-Permissions, per-route sign_v3.
+//
+// Fail closed: отсутствующий коннектор, ошибка или пустая identity — ошибка
+// (снаружи это 401). Роли из auth.roles/roles_all проверяются так же, как для JWT.
+func (mp *MultiProxy) applyConnectorIdentity(r *http.Request, name string, rule *config.RoutingRule) error {
+	c, ok := mp.authConnectors[name]
+	if !ok {
+		return fmt.Errorf("auth connector %q is not compiled", name)
+	}
+	raw, err := c.Authenticate(r)
+	if err != nil {
+		return fmt.Errorf("auth connector %s: %w", name, err)
+	}
+	if len(raw) == 0 {
+		return fmt.Errorf("auth connector %s: no identity", name)
+	}
+	claims := jwt.MapClaims(raw)
+	if rule.Auth != nil && (len(rule.Auth.Roles) > 0 || len(rule.Auth.RolesAll) > 0) {
+		if err := mp.checkRoles(claims, rule.Auth.Roles, rule.Auth.RolesAll); err != nil {
+			return err
+		}
+	}
+	mp.applyClaimHeaders(r, claims)
+	mp.applySignV3(r, claims, rule)
 	return nil
 }
 

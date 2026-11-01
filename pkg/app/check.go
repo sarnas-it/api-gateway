@@ -25,6 +25,10 @@ func runCheck(path string, strict bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "config invalid: %v\n", err)
 		return 1
 	}
+	if _, err := authConnectors(cfg); err != nil {
+		fmt.Fprintf(stderr, "config invalid: %v\n", err)
+		return 1
+	}
 	if strict && len(warnings) > 0 {
 		fmt.Fprintf(stderr, "config invalid: %d warning(s) treated as errors (-strict)\n", len(warnings))
 		return 1

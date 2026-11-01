@@ -402,6 +402,10 @@ type AuthRule struct {
 	Roles      []string `yaml:"roles,omitempty"`       // хотя бы одна из ролей (any-of)
 	RolesAll   []string `yaml:"roles_all,omitempty"`   // все перечисленные роли (all-of)
 	StripToken *bool    `yaml:"strip_token,omitempty"` // удалять токен (наследует глобальный если не указан)
+	// Connector — имя compile-time xgate-модуля с plugin.AuthConnector.
+	// Если задан, маршрут аутентифицируется только им: JWT для него не
+	// проверяется, отсутствие или ошибка credentials — 401 (fail closed).
+	Connector string `yaml:"connector,omitempty"`
 }
 
 // EffectiveRequired возвращает, требуется ли аутентификация на маршруте.

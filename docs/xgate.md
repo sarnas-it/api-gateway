@@ -114,6 +114,34 @@ discovery, HTTP-middleware). Интерфейсы живут в `pkg/plugin`; я
 раз перед применением цепочки, поэтому порядок такой: `Configure` → `Wrap` →
 листенеры.
 
+### Auth-коннектор
+
+`plugin.AuthConnector` — аутентификатор, который маршрут выбирает через
+`auth.connector`. Коннектор возвращает claims (`id`, опционально `email` и
+`roles`), пустой результат означает «identity нет» и запрос получает 401:
+
+```go
+func (m *module) Authenticate(r *http.Request) (map[string]any, error) {
+	key := r.Header.Get("X-API-Key")
+	if key == "" || !m.valid(key) {
+		return nil, nil
+	}
+	return map[string]any{"id": "svc-a", "roles": []string{"admin"}}, nil
+}
+```
+
+```yaml
+routing:
+  rules:
+    - path_prefix: "/api/keys"
+      target_name: "api"
+      auth:
+        connector: "my.module"   # имя из Name()
+        roles: ["admin"]
+```
+
+Готовый пример — `modules/apikey` (статичные API-ключи из `plugins.apikey.keys`).
+
 ## Совместимость с Caddy
 
 Caddy-модули **не подключаются напрямую**: они завязаны на `caddy.Context`,

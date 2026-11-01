@@ -13,6 +13,10 @@ modules:
   # - path: code.sarnas.ru/xgate-modules/dns-route53
   #   replacement: ./modules/dns/route53
 
+  # Аутентификация статичными API-ключами (auth.connector: apikey).
+  # - path: code.sarnas.ru/xgate-modules/apikey
+  #   replacement: ./modules/apikey
+
   # Локальный форк модуля:
   # - path: github.com/acme/gateway-module
   #   version: v1.0.0
