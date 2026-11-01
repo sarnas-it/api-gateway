@@ -257,7 +257,7 @@ tls:
   http_port: 80
   domains:
     - "api.example.com"
-    - "*.example.com"
+    - "www.example.com"
   email: "admin@example.com"
   cache_dir: "/var/lib/api-gateway/certs"
   staging: false
@@ -266,7 +266,7 @@ tls:
 
 **Результат.** HTTPS-сервер на 443, HTTP на 80 обслуживает ACME-challenge и редиректит на HTTPS. `/health` и `/ready` на HTTP отвечают 200.
 
-**Оговорки.** Сначала проверяйте на `staging: true` — это реальный staging CA с отдельным кешем. `directory_url` перекрывает выбор CA по `staging`. Домен и email обязательны при включении.
+**Оговорки.** Сначала проверяйте на `staging: true` — это реальный staging CA с отдельным кешем. `directory_url` перекрывает выбор CA по `staging`. Домен и email обязательны при включении. Wildcard-домены (`*.example.com`) не поддерживаются: `autocert` использует HTTP-01/TLS-ALPN-01, для wildcard нужен DNS-01 (`certmagic`).
 
 ## 11. Service discovery по labels
 
