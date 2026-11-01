@@ -20,10 +20,13 @@
 - `plugin.HTTPMiddleware` — `Wrap(http.Handler) http.Handler`.
 - `plugin.AuthConnector` — `Authenticate(*http.Request) (map[string]any, error)`;
   включается на маршруте через `auth.connector: <name>`.
-- Дальше: `DiscoveryProvider`, `Storage`.
+- `plugin.DiscoveryProvider` — `Watch(ctx, emit func([]DiscoveredService)) error`;
+  включается через `discovery.module: <name>`.
+- Дальше: `Storage`.
 
 DNS-модули: `modules/dns/{cloudflare,desec,digitalocean,route53}` — отдельные Go-модули.
 Auth-коннектор: `modules/apikey` (статичные ключи, роли из конфига).
+Discovery: `modules/file` (JSON-файл сервисов, опрос по интервалу).
 `tls.dns_provider: <name>` работает только в бинарнике, собранном с этим
 модулем через `xgate --with code.sarnas.ru/xgate-modules/dns-<name>=./modules/dns/<name>`.
 

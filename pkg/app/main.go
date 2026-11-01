@@ -113,6 +113,16 @@ func Main() {
 		log.Error("Failed to create discovery manager", zap.Error(err))
 		os.Exit(1)
 	}
+	if dp, derr := discoveryModuleProvider(cfg, log); derr != nil {
+		log.Error("Failed to wire discovery module", zap.Error(derr))
+		os.Exit(1)
+	} else if dp != nil {
+		if err := mgr.UseProvider(dp); err != nil {
+			log.Error("Failed to set discovery provider", zap.Error(err))
+			os.Exit(1)
+		}
+		log.Info("Using discovery module", zap.String("module", cfg.Discovery.Module))
+	}
 
 	var adminSrv *admin.Server
 	if cfg.Admin.Enabled {

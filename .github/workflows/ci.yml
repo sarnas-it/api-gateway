@@ -90,11 +90,12 @@ jobs:
             --with code.sarnas.ru/xgate-modules/dns-route53=./modules/dns/route53 \
             --output /tmp/gateway-dns
 
-      - name: Build with example and API-key modules
+      - name: Build with example, API-key and discovery modules
         run: |
           /tmp/xgate build --src . \
             --with code.sarnas.ru/xgate-modules/example=./modules/example \
             --with code.sarnas.ru/xgate-modules/apikey=./modules/apikey \
+            --with code.sarnas.ru/xgate-modules/discovery-file=./modules/file \
             --output /tmp/gateway-example
 
       - name: Verify binaries

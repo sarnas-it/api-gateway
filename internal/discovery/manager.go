@@ -48,6 +48,11 @@ func NewManager(cfg *config.Config, log *zap.Logger, onUpdate func(*config.Confi
 	}
 	d := cfg.Discovery
 	m.stateFile = d.StateFile
+	if d.Module != "" {
+		// Источник — compile-time модуль; провайдер передаёт pkg/app через
+		// UseProvider до Start. Встроенный Docker-провайдер не создаётся.
+		return m, nil
+	}
 	provider, err := newDockerProvider(
 		d.Host, d.APIVersion,
 		ParseOptions{
@@ -72,6 +77,18 @@ func (m *Manager) setProvider(p Provider) {
 	m.provider = p
 }
 
+// UseProvider задаёт источник discovery от compile-time модуля. Вызывать до
+// Start: после старта provider уже захвачен горутиной Start.
+func (m *Manager) UseProvider(p Provider) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.started {
+		return fmt.Errorf("discovery: provider must be set before Start")
+	}
+	m.provider = p
+	return nil
+}
+
 // Start запускает discovery. Безопасно вызывать при выключенном discovery.
 // Повторный Start, пока провайдер уже запущен, — no-op.
 func (m *Manager) Start(ctx context.Context) error {
@@ -82,7 +99,14 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 	provider := m.provider
 	if provider == nil {
+		module := ""
+		if m.base != nil && m.base.Discovery != nil && m.base.Discovery.Enabled {
+			module = m.base.Discovery.Module
+		}
 		m.mu.Unlock()
+		if module != "" {
+			return fmt.Errorf("discovery: enabled with module %q but no provider was wired", module)
+		}
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
