@@ -50,7 +50,7 @@ permissions:
 
 **Флаги.** `-config <path>` — путь к файлу конфигурации.
 
-**Сигналы.** `SIGHUP` перечитывает конфиг и применяет его атомарно (старое состояние сохраняется при ошибке). `SIGINT` и `SIGTERM` запускают graceful shutdown с таймаутом 30 секунд.
+**Сигналы.** `SIGHUP` перечитывает конфиг и атомарно применяет изменения, которые можно применить на лету: `targets`, `routing`, rate limits, `server.trusted_proxies`, `server.max_request_body_size`, CORS, static, headers и `tls.redirect_http`. Изменения `server.port`/таймаутов, `tls` (кроме `redirect_http`), `jwt`, `basic_auth`, `identity`, `permissions`, `webhooks`, `metrics` и `logging` требуют рестарта: такой конфиг отклоняется целиком с ошибкой `configuration change requires restart`, старое состояние сохраняется. `SIGINT` и `SIGTERM` запускают graceful shutdown с таймаутом 30 секунд.
 
 **Неизвестные ключи.** Ключи, которых нет в структуре конфига, не считаются ошибкой: шлюз пишет в лог предупреждение `Unknown config key` с точечным путём (например `headers.forward_headers`). Строгий режим намеренно не включён.
 

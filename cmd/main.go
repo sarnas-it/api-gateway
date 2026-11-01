@@ -124,7 +124,9 @@ func main() {
 				// SetBase — единственный путь: он пересобирает конфиг с последним
 				// discovery-результатом и сам вызывает Reload (работает и при
 				// выключенном discovery), поэтому отдельный p.Reload не нужен.
-				mgr.SetBase(newCfg)
+				if err := mgr.SetBase(newCfg); err != nil {
+					log.Error("Failed to apply reloaded config", zap.Error(err))
+				}
 			default:
 				log.Info("Received shutdown signal", zap.String("signal", sig.String()))
 				goto shutdown
