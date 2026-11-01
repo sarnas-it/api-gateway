@@ -61,6 +61,13 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
+// Unwrap отдаёт базовый ResponseWriter. Через него http.ResponseController
+// доходит до Hijack (WebSocket/101) и SetReadDeadline/SetWriteDeadline
+// (per-route таймауты), которые сама обёртка не реализует.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 // Flush пробрасывает flush к базовому writer — нужно для SSE (text/event-stream),
 // иначе потоковые ответы буферизуются и клиент не получает события.
 func (rw *responseWriter) Flush() {
