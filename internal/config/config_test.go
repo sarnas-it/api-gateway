@@ -661,7 +661,6 @@ tls:
 		extra string
 	}{
 		{"missing credentials", "  domains: [\"*.example.com\"]\n  dns_provider: regru"},
-		{"unsupported provider", "  domains: [\"*.example.com\"]\n  dns_provider: cloudflare\n  dns_username: u\n  dns_password: p"},
 		{"provider without wildcard", "  domains: [example.com]\n  dns_provider: regru\n  dns_username: u\n  dns_password: p"},
 		{"negative propagation", "  domains: [\"*.example.com\"]\n  dns_provider: regru\n  dns_username: u\n  dns_password: p\n  dns_propagation_timeout: -1s"},
 	}
@@ -672,6 +671,29 @@ tls:
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestTLS_ExternalDNSProviderAccepted(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains: ["*.example.com"]
+  email: "admin@example.com"
+  dns_provider: "cloudflare"
+  dns_config:
+    api_token: "token"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TLS.DNSConfig["api_token"] != "token" {
+		t.Fatalf("dns_config = %v", cfg.TLS.DNSConfig)
 	}
 }
 

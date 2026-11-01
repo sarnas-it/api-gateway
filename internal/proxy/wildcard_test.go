@@ -68,12 +68,12 @@ func TestCombineTLSConfigSelectsWildcardBySNI(t *testing.T) {
 
 func TestNewWildcardCertmagicInitializesIssuer(t *testing.T) {
 	cfg := &config.TLSConfig{
-		Domains:      []string{"*.example.com"},
-		Email:        "admin@example.com",
-		DNSUsername:  "user",
-		DNSPassword:  "pass",
-		CacheDir:     t.TempDir(),
-		DNSProvider:  "regru",
+		Domains:     []string{"*.example.com"},
+		Email:       "admin@example.com",
+		DNSUsername: "user",
+		DNSPassword: "pass",
+		CacheDir:    t.TempDir(),
+		DNSProvider: "regru",
 	}
 	magic, stop, wildcards, err := newWildcardCertmagic(cfg, zap.NewNop())
 	if err != nil {

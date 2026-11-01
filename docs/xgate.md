@@ -21,9 +21,18 @@ go build -o bin/api-gateway ./cmd/gateway
 ```bash
 xgate build \
   --src . \
-  --with github.com/acme/gateway-dns-cloudflare@v1.0.0 \
+  --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare \
   --with github.com/acme/gateway-auth-oidc=../gateway-auth-oidc \
   --output ./api-gateway-custom
+```
+
+Для Cloudflare в конфиге:
+
+```yaml
+tls:
+  dns_provider: "cloudflare"
+  dns_config:
+    api_token: "${CF_API_TOKEN}"
 ```
 
 Флаги:

@@ -146,14 +146,15 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `curves` | []string | — | Кривые: `X25519`, `P-256`, `P-384`, `P-521` | `["X25519", "P-256"]` |
 | `client_auth` | string | `none` | mTLS на основном листенере: `none`, `request`, `require`, `verify` | `verify` |
 | `client_ca_file` | string | — | PEM-файл CA для клиентских сертификатов; обязателен при `client_auth: verify` | `/etc/api-gateway/clients-ca.pem` |
-| `dns_provider` | string | `""` | Включает ACME DNS-01 для wildcard; сейчас поддерживается `regru` | `regru` |
+| `dns_provider` | string | `""` | ACME DNS-01 для wildcard: встроенный `regru` или провайдер, собранный через `xgate --with` | `cloudflare` |
 | `dns_username` | string | `""` | Логин API reg.ru; секрет лучше подставлять из env | `${REGRU_USER}` |
 | `dns_password` | string | `""` | Пароль API reg.ru; секрет лучше подставлять из env | `${REGRU_PASSWORD}` |
+| `dns_config` | map[string]string | `{}` | Параметры внешнего libdns-провайдера (например, `api_token`) | `{api_token: "${CF_API_TOKEN}"}` |
 | `dns_propagation_timeout` | duration | `2m` | Сколько ждать появления TXT-записи; 0 — дефолт certmagic | `5m` |
 
 При включённом TLS запускаются два сервера: HTTPS на `port` и HTTP на `http_port` для ACME-challenge и редиректа. `staging: true` использует реальный staging CA и отдельный подкаталог кеша, чтобы staging-сертификаты не смешивались с production.
 
-Точные домены обслуживает `autocert` (HTTP-01/TLS-ALPN-01). Wildcard-домены (`*.example.com`) обслуживает `certmagic` через DNS-01: они требуют `dns_provider` и учётных данных провайдера. Смешивать можно: `["chatcom.online", "*.chatcom.online", "sarnas.ru"]` — wildcard пойдёт через DNS-01, остальные через HTTP-01.
+Точные домены обслуживает `autocert` (HTTP-01/TLS-ALPN-01). Wildcard-домены (`*.example.com`) обслуживает `certmagic` через DNS-01: они требуют `dns_provider`. `regru` встроен; остальные провайдеры — libdns-модули, собранные через `xgate --with` (например, `plugins/dns/cloudflare`). Смешивать можно: `["chatcom.online", "*.chatcom.online", "sarnas.ru"]` — wildcard пойдёт через DNS-01, остальные через HTTP-01.
 
 Если задан `worker_port`, поднимается третий листенер — HTTPS с
 `ClientAuth: RequireAndVerifyClientCert` и проверкой клиентского сертификата по

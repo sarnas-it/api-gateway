@@ -5,6 +5,7 @@ go 1.26.9
 require (
 	github.com/caddyserver/certmagic v0.25.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/libdns/cloudflare v0.2.2
 	github.com/libdns/libdns v1.1.1
 	github.com/nats-io/nats.go v1.52.0
 	github.com/prometheus/client_golang v1.25.0

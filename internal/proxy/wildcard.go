@@ -17,7 +17,36 @@ import (
 	"go.uber.org/zap"
 
 	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/pkg/plugin"
 )
+
+// dnsPair объединяет appender/deleter в certmagic.DNSProvider.
+type dnsPair struct {
+	libdns.RecordAppender
+	libdns.RecordDeleter
+}
+
+// dnsProviderFor выбирает встроенный reg.ru или зарегистрированный
+// xgate-модуль (libdns) по tls.dns_provider.
+func dnsProviderFor(tlsCfg *config.TLSConfig) (certmagic.DNSProvider, error) {
+	switch tlsCfg.DNSProvider {
+	case "", "regru":
+		return newRegruDNS(tlsCfg.DNSUsername, tlsCfg.DNSPassword), nil
+	default:
+		p, ok := plugin.DNSProviderByName(tlsCfg.DNSProvider)
+		if !ok {
+			return nil, fmt.Errorf("dns_provider %q is not compiled; build with xgate --with <module>", tlsCfg.DNSProvider)
+		}
+		appender, deleter, err := p.New(tlsCfg.DNSConfig)
+		if err != nil {
+			return nil, fmt.Errorf("dns_provider %q: %w", tlsCfg.DNSProvider, err)
+		}
+		if appender == nil || deleter == nil {
+			return nil, fmt.Errorf("dns_provider %q returned nil manager", tlsCfg.DNSProvider)
+		}
+		return &dnsPair{RecordAppender: appender, RecordDeleter: deleter}, nil
+	}
+}
 
 const regruAPIBase = "https://api.reg.ru/api/regru2"
 
@@ -186,7 +215,10 @@ func newWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*certma
 		return nil, nil, nil, nil
 	}
 
-	provider := newRegruDNS(tlsCfg.DNSUsername, tlsCfg.DNSPassword)
+	provider, err := dnsProviderFor(tlsCfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	storage := &certmagic.FileStorage{Path: tlsCfg.CacheDir}
 	var magicPtr atomic.Pointer[certmagic.Config]
 	cache := certmagic.NewCache(certmagic.CacheOptions{

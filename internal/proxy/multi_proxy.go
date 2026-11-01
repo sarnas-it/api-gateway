@@ -33,6 +33,7 @@ import (
 	"code.sarnas.ru/api-gateway/internal/identity"
 	"code.sarnas.ru/api-gateway/internal/jwtutil"
 	"code.sarnas.ru/api-gateway/internal/permissions"
+	"code.sarnas.ru/api-gateway/pkg/plugin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -316,9 +317,22 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 	// и ответы middleware (401/404/429).
 	handler = compressionMiddleware(mp)(handler)
 
+	// Compile-time modules are outermost: xgate modules can add middleware
+	// without touching the core chain.
+	handler = wrapPluginMiddleware(handler, plugin.Modules())
+
 	mp.handler = handler
 
 	return mp, nil
+}
+
+func wrapPluginMiddleware(next http.Handler, mods []plugin.Module) http.Handler {
+	for _, m := range mods {
+		if mw, ok := m.(plugin.HTTPMiddleware); ok {
+			next = mw.Wrap(next)
+		}
+	}
+	return next
 }
 
 // setCORSHeaders устанавливает CORS заголовки

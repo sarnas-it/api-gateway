@@ -104,6 +104,8 @@ type TLSConfig struct {
 	// из окружения: "${REGRU_USER}", "${REGRU_PASSWORD}".
 	DNSUsername string `yaml:"dns_username"`
 	DNSPassword string `yaml:"dns_password"`
+	// DNSConfig — параметры внешнего libdns-провайдера (например, api_token).
+	DNSConfig map[string]string `yaml:"dns_config"`
 	// DNSPropagationTimeout — сколько ждать появления TXT-записи; 0 → 2 минуты.
 	DNSPropagationTimeout time.Duration `yaml:"dns_propagation_timeout"`
 
@@ -1111,11 +1113,8 @@ func (c *Config) validate() error {
 			return fmt.Errorf("tls.domains: wildcard requires tls.dns_provider (DNS-01) or tls.wildcard_cert_file/tls.wildcard_key_file")
 		}
 		if c.TLS.DNSProvider != "" {
-			if c.TLS.DNSProvider != "regru" {
-				return fmt.Errorf("tls.dns_provider: unsupported provider %q, want regru", c.TLS.DNSProvider)
-			}
-			if c.TLS.DNSUsername == "" || c.TLS.DNSPassword == "" {
-				return fmt.Errorf("tls.dns_username and tls.dns_password are required when tls.dns_provider is set")
+			if c.TLS.DNSProvider == "regru" && (c.TLS.DNSUsername == "" || c.TLS.DNSPassword == "") {
+				return fmt.Errorf("tls.dns_username and tls.dns_password are required for dns_provider regru")
 			}
 			if !hasWildcard {
 				return fmt.Errorf("tls.dns_provider requires at least one wildcard domain in tls.domains")
