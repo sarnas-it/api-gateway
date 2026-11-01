@@ -159,12 +159,16 @@ var (
 func metricsEndpointMiddleware(metrics *Metrics, allowedIPs []string, clientIP func(*http.Request) string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/metrics" {
+			if r.URL.Path != "/metrics" && r.URL.Path != "/metrics/prometheus" {
 				next.ServeHTTP(w, r)
 				return
 			}
 			if len(allowedIPs) > 0 && !ipAllowed(clientIP(r), allowedIPs) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			if r.URL.Path == "/metrics/prometheus" {
+				metrics.PromHandler().ServeHTTP(w, r)
 				return
 			}
 			metrics.Handler().ServeHTTP(w, r)
@@ -418,7 +422,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		}
 
 		mp.metrics.IncRequests(r.Method, r.URL.Path, strconv.Itoa(rw.statusCode))
-		mp.metrics.ObserveDuration(r.Method, r.URL.Path, time.Since(startTime))
+		mp.metrics.ObserveDuration(r.Method, r.URL.Path, strconv.Itoa(rw.statusCode), time.Since(startTime))
 
 		// Publish on_response webhooks
 		if mp.publisher != nil {

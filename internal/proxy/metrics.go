@@ -4,8 +4,12 @@ import (
 	"expvar"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Metrics собирает счётчики gateway. Когда enabled=false, все методы —
@@ -20,6 +24,14 @@ type Metrics struct {
 	targetUp         *expvar.Map
 	activeRequests   int64
 	mu               sync.RWMutex
+
+	registry     *prometheus.Registry
+	promRequests *prometheus.CounterVec
+	promDuration *prometheus.HistogramVec
+	promActive   prometheus.Gauge
+	promDenials  prometheus.Counter
+	promTargetUp *prometheus.GaugeVec
+	promHandler  http.Handler
 }
 
 func NewMetrics(enabled bool) *Metrics {
@@ -34,6 +46,31 @@ func NewMetrics(enabled bool) *Metrics {
 	// Регистрируем один раз: повторный expvar.NewInt с тем же именем паникует,
 	// а Handler() вызывается на каждый запрос /metrics.
 	expvar.NewInt("gateway_active_requests")
+
+	m.registry = prometheus.NewRegistry()
+	m.promRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "gateway_requests_total",
+		Help: "Total HTTP requests handled by the gateway.",
+	}, []string{"method", "route", "status"})
+	m.promDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "gateway_request_duration_seconds",
+		Help:    "Gateway request duration in seconds.",
+		Buckets: []float64{.001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+	}, []string{"method", "route", "status"})
+	m.promActive = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "gateway_active_requests",
+		Help: "Requests currently being processed.",
+	})
+	m.promDenials = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "gateway_rate_limit_denials_total",
+		Help: "Requests rejected by rate limiting.",
+	})
+	m.promTargetUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "gateway_target_up",
+		Help: "Target health (1 = up, 0 = down).",
+	}, []string{"target"})
+	m.registry.MustRegister(m.promRequests, m.promDuration, m.promActive, m.promDenials, m.promTargetUp)
+	m.promHandler = promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 	return m
 }
 
@@ -43,14 +80,30 @@ func (m *Metrics) IncRequests(method, path, status string) {
 	}
 	key := method + ":" + path + ":" + status
 	m.requestsTotal.Add(key, 1)
+	m.promRequests.WithLabelValues(method, routeLabel(path), status).Inc()
 }
 
-func (m *Metrics) ObserveDuration(method, path string, d time.Duration) {
+func (m *Metrics) ObserveDuration(method, path, status string, d time.Duration) {
 	if !m.enabled {
 		return
 	}
 	key := method + ":" + path
 	m.requestDuration.Add(key, d.Milliseconds())
+	m.promDuration.WithLabelValues(method, routeLabel(path), status).Observe(d.Seconds())
+}
+
+// routeLabel снижает кардинальность: /api/blog/posts → /api/blog,
+// /blog/foo → /blog, / → /.
+func routeLabel(path string) string {
+	p := strings.Trim(path, "/")
+	if p == "" {
+		return "/"
+	}
+	parts := strings.Split(p, "/")
+	if parts[0] == "api" && len(parts) > 1 {
+		return "/" + parts[0] + "/" + parts[1]
+	}
+	return "/" + parts[0]
 }
 
 func (m *Metrics) IncRateLimitDenial() {
@@ -58,6 +111,7 @@ func (m *Metrics) IncRateLimitDenial() {
 		return
 	}
 	m.rateLimitDenials.Add(1)
+	m.promDenials.Inc()
 }
 
 func (m *Metrics) SetTargetUp(name string, up bool) {
@@ -70,6 +124,7 @@ func (m *Metrics) SetTargetUp(name string, up bool) {
 	}
 	m.targetUp.Set(name, &expvar.Int{})
 	m.targetUp.Add(name, val)
+	m.promTargetUp.WithLabelValues(name).Set(float64(val))
 }
 
 func (m *Metrics) IncActiveRequests() {
@@ -79,6 +134,7 @@ func (m *Metrics) IncActiveRequests() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.activeRequests++
+	m.promActive.Set(float64(m.activeRequests))
 }
 
 func (m *Metrics) DecActiveRequests() {
@@ -88,8 +144,10 @@ func (m *Metrics) DecActiveRequests() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.activeRequests--
+	m.promActive.Set(float64(m.activeRequests))
 }
 
+// Handler — прежний expvar-формат для дашборда и monitoring-glue.
 func (m *Metrics) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -109,4 +167,12 @@ func (m *Metrics) Handler() http.Handler {
 			fmt.Fprintf(w, "%s %s\n", kv.Key, kv.Value.String())
 		})
 	})
+}
+
+// PromHandler — Prometheus-формат с гистограммами.
+func (m *Metrics) PromHandler() http.Handler {
+	if m.promHandler == nil {
+		return http.NotFoundHandler()
+	}
+	return m.promHandler
 }
