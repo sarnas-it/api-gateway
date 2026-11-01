@@ -20,9 +20,9 @@
 - `plugin.HTTPMiddleware` — `Wrap(http.Handler) http.Handler`.
 - Дальше: `AuthConnector`, `DiscoveryProvider`, `Storage`.
 
-DNS-модули: `plugins/dns/cloudflare`, `desec`, `digitalocean`, `route53`.
+DNS-модули: `modules/dns/{cloudflare,desec,digitalocean,route53}` — отдельные Go-модули.
 `tls.dns_provider: <name>` работает только в бинарнике, собранном с этим
-модулем через `xgate --with code.sarnas.ru/api-gateway/plugins/dns/<name>`.
+модулем через `xgate --with code.sarnas.ru/xgate-modules/dns-<name>=./modules/dns/<name>`.
 
 DNS-провайдер Caddy (`dns.providers.*`) почти всегда обёртка над `libdns`:
 берём `github.com/libdns/<provider>` и пишем тонкий xgate-модуль, который его

@@ -154,7 +154,7 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 
 При включённом TLS запускаются два сервера: HTTPS на `port` и HTTP на `http_port` для ACME-challenge и редиректа. `staging: true` использует реальный staging CA и отдельный подкаталог кеша, чтобы staging-сертификаты не смешивались с production.
 
-Точные домены обслуживает `autocert` (HTTP-01/TLS-ALPN-01). Wildcard-домены (`*.example.com`) обслуживает `certmagic` через DNS-01: они требуют `dns_provider`. `regru` встроен; остальные провайдеры — libdns-модули, собранные через `xgate --with` (например, `plugins/dns/cloudflare`). Смешивать можно: `["chatcom.online", "*.chatcom.online", "sarnas.ru"]` — wildcard пойдёт через DNS-01, остальные через HTTP-01.
+Точные домены обслуживает `autocert` (HTTP-01/TLS-ALPN-01). Wildcard-домены (`*.example.com`) обслуживает `certmagic` через DNS-01: они требуют `dns_provider`. `regru` встроен; остальные провайдеры — libdns-модули, собранные через `xgate --with` (например, `xgate-modules/dns-cloudflare`). Смешивать можно: `["chatcom.online", "*.chatcom.online", "sarnas.ru"]` — wildcard пойдёт через DNS-01, остальные через HTTP-01.
 
 Если задан `worker_port`, поднимается третий листенер — HTTPS с
 `ClientAuth: RequireAndVerifyClientCert` и проверкой клиентского сертификата по

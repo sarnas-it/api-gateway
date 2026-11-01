@@ -21,7 +21,7 @@ go build -o bin/api-gateway ./cmd/gateway
 ```bash
 xgate build \
   --src . \
-  --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare \
+  --with code.sarnas.ru/xgate-modules/dns-cloudflare=./modules/dns/cloudflare \
   --with github.com/acme/gateway-auth-oidc=../gateway-auth-oidc \
   --output ./api-gateway-custom
 ```
@@ -60,7 +60,8 @@ gateway:
   source: .
   output: ./bin/api-gateway-custom
 modules:
-  - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
+  - path: code.sarnas.ru/xgate-modules/dns-cloudflare
+    replacement: ./modules/dns/cloudflare
   - path: github.com/acme/gateway-module
     version: v1.0.0
     replacement: ../gateway-module

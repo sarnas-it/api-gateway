@@ -4,10 +4,14 @@ gateway:
 
 modules:
   # libdns-провайдеры для DNS-01. Раскомментируйте нужный.
-  # - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
-  # - path: code.sarnas.ru/api-gateway/plugins/dns/desec
-  # - path: code.sarnas.ru/api-gateway/plugins/dns/digitalocean
-  # - path: code.sarnas.ru/api-gateway/plugins/dns/route53
+  # - path: code.sarnas.ru/xgate-modules/dns-cloudflare
+  #   replacement: ./modules/dns/cloudflare
+  # - path: code.sarnas.ru/xgate-modules/dns-desec
+  #   replacement: ./modules/dns/desec
+  # - path: code.sarnas.ru/xgate-modules/dns-digitalocean
+  #   replacement: ./modules/dns/digitalocean
+  # - path: code.sarnas.ru/xgate-modules/dns-route53
+  #   replacement: ./modules/dns/route53
 
   # Локальный форк модуля:
   # - path: github.com/acme/gateway-module
