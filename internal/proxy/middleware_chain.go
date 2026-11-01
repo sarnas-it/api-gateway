@@ -156,14 +156,14 @@ var (
 
 // ──────── Metrics endpoint ────────
 
-func metricsEndpointMiddleware(metrics *Metrics, allowedIPs []string) Middleware {
+func metricsEndpointMiddleware(metrics *Metrics, allowedIPs []string, clientIP func(*http.Request) string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/metrics" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if len(allowedIPs) > 0 && !ipAllowed(getClientIP(r), allowedIPs) {
+			if len(allowedIPs) > 0 && !ipAllowed(clientIP(r), allowedIPs) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -300,7 +300,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 
 		// Per-route rate limit
 		if rc != nil && rc.RateLimit != nil {
-			clientIP := getClientIP(r)
+			clientIP := mp.clientIP(r)
 			if !rc.RateLimit.Allow(clientIP) {
 				mp.setCORSHeaders(rw.Header(), r)
 				http.Error(rw, "Too many requests", http.StatusTooManyRequests)

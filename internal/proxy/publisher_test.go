@@ -46,7 +46,8 @@ func TestBuildEventIPAndUserAgent(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "203.0.113.7, 10.1.2.3")
 	r.Header.Set("User-Agent", "test-agent/1.0")
 
-	ev := (&Publisher{}).buildEvent(r, 200, config.WebhookConfig{})
+	p := &Publisher{trustedProxies: mustCIDRs(t, "10.1.2.3")}
+	ev := p.buildEvent(r, 200, config.WebhookConfig{})
 	if ev.IP != "203.0.113.7" {
 		t.Fatalf("IP = %q, want 203.0.113.7", ev.IP)
 	}

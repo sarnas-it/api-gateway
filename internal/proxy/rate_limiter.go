@@ -98,18 +98,62 @@ func (l *IPRateLimiter) cleanup() {
 	}
 }
 
-func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		for i := len(ips) - 1; i >= 0; i-- {
-			ip := strings.TrimSpace(ips[i])
-			if ip == "" {
-				continue
-			}
+// clientIP возвращает клиентский IP с учётом текущего списка доверенных прокси.
+func (mp *MultiProxy) clientIP(r *http.Request) string {
+	mp.mu.RLock()
+	trusted := mp.trustedProxies
+	mp.mu.RUnlock()
+	return getClientIP(r, trusted)
+}
+
+// getClientIP возвращает клиентский IP. X-Forwarded-For учитывается только
+// если непосредственный пир (RemoteAddr) входит в trusted. Цепочка читается
+// справа налево: первый недоверенный адрес — клиентский, всё левее —
+// подделка. Без trusted XFF игнорируется.
+func getClientIP(r *http.Request, trusted []*net.IPNet) string {
+	remote := hostOnly(r.RemoteAddr)
+	if len(trusted) == 0 || !ipTrusted(remote, trusted) {
+		return remote
+	}
+
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return remote
+	}
+	ips := strings.Split(xff, ",")
+	for i := len(ips) - 1; i >= 0; i-- {
+		ip := hostOnly(strings.TrimSpace(ips[i]))
+		if ip == "" {
+			continue
+		}
+		if !ipTrusted(ip, trusted) {
 			return ip
 		}
-		return strings.TrimSpace(ips[0])
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return host
+	for _, raw := range ips {
+		if ip := hostOnly(strings.TrimSpace(raw)); ip != "" {
+			return ip
+		}
+	}
+	return remote
+}
+
+func hostOnly(addr string) string {
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return strings.Trim(addr, "[]")
+}
+
+func ipTrusted(ip string, nets []*net.IPNet) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, n := range nets {
+		if n.Contains(parsed) {
+			return true
+		}
+	}
+	return false
 }
