@@ -110,3 +110,4 @@ Caddy-only модуль при необходимости портируется
 в отдельный Caddy-фронт.
 
 Стратегия экосистемы и интерфейсы — [`plugin-ecosystem.md`](plugin-ecosystem.md).
+Индекс готовых модулей и шаблон — [`modules.md`](modules.md), `modules/example`.

@@ -89,8 +89,11 @@ jobs:
             --with code.sarnas.ru/xgate-modules/dns-route53=./modules/dns/route53 \
             --output /tmp/gateway-dns
 
+      - name: Build with example module
+        run: /tmp/xgate build --src . --with code.sarnas.ru/xgate-modules/example=./modules/example --output /tmp/gateway-example
+
       - name: Verify binaries
-        run: test -x /tmp/gateway && test -x /tmp/gateway-dns
+        run: test -x /tmp/gateway && test -x /tmp/gateway-dns && test -x /tmp/gateway-example
 
   build:
     needs: [lint, test]
