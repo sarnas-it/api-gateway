@@ -63,11 +63,13 @@ permissions:
 | `env` | string | `""` | `dev` включает мягкий CORS (reflect origin + credentials) и dev-логи. Любое другое значение — обычный режим | `prod` |
 | `health_check` | bool | `false` | Включает фоновые health-проверки таргетов, у которых задан `health_check` | `true` |
 | `circuit_breaker` | bool | `false` | Включает circuit breaker на ошибках транспорта | `true` |
-| `metrics_enabled` | bool | `false` | Собирает метрики и открывает `/metrics` | `true` |
-| `metrics_allowed_ips` | []string | `[]` (все) | Allowlist клиентских IP для `/metrics` | `["10.0.0.5"]` |
+| `metrics_enabled` | bool | `false` | Собирает метрики и открывает `/metrics` (expvar) и `/metrics/prometheus` | `true` |
+| `metrics_allowed_ips` | []string | `[]` (все) | Allowlist клиентских IP для обоих metrics-эндпоинтов | `["10.0.0.5"]` |
 | `max_idle_conns_per_host` | int | `1000` | Размер пула keep-alive соединений к каждому таргету. Должен быть не меньше пиковой конкурентности | `1000` |
 
-Метрики выключены по умолчанию, потому что их сбор добавляет работу на каждый запрос. Включайте `metrics_enabled` осознанно; `metrics_allowed_ips` ограничивает доступ к `/metrics`, если эндпоинт смотрит наружу.
+Метрики выключены по умолчанию, потому что их сбор добавляет работу на каждый запрос. Включайте `metrics_enabled` осознанно; `metrics_allowed_ips` ограничивает доступ к обоим эндпоинтам, если они смотрят наружу.
+
+`/metrics` остаётся в формате `expvar` для дашборда и `monitoring-glue`. `/metrics/prometheus` отдаёт Prometheus-формат с гистограммой `gateway_request_duration_seconds` (лейблы `method`, `route`, `status`), счётчиком `gateway_requests_total`, gauge `gateway_active_requests`/`gateway_target_up` и счётчиком `gateway_rate_limit_denials_total`. Лейбл `route` укрупнён (`/api/blog/posts` → `/api/blog`), чтобы не раздувать кардинальность.
 
 ## server
 
@@ -644,4 +646,4 @@ webhooks:
 - **Рейт-лимиты.** Per-route лимит — token bucket на IP клиента; IP берётся из последнего непустого значения `X-Forwarded-For`, иначе из `RemoteAddr`. Глобальный лимит — один на процесс. Per-route отдаёт 429 без `Retry-After`; глобальный — 429 с `Retry-After: 1`. Лимитеры по IP очищаются после часа простоя.
 - **Access log.** Выключен по умолчанию: каждая запись — это аллокации на горячем пути. Включайте для отладки, а не в проде под нагрузкой.
 - **Тело запроса для аудита.** Читается только для `POST`, `PUT`, `PATCH`, `QUERY` и ограничено `max_request_body_size`; в событие попадает только JSON-объект короче 64 KiB.
-- **Метрики.** `/metrics` в формате `expvar`; при `metrics_allowed_ips` доступ ограничен по IP.
+- **Метрики.** `/metrics` в формате `expvar`, `/metrics/prometheus` — Prometheus с гистограммами; при `metrics_allowed_ips` доступ ограничен по IP для обоих.
