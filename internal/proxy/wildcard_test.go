@@ -7,8 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/caddyserver/certmagic"
 	"github.com/libdns/libdns"
+	"go.uber.org/zap"
+
+	"code.sarnas.ru/api-gateway/internal/config"
 )
 
 func TestHostMatchesWildcard(t *testing.T) {
@@ -59,6 +64,40 @@ func TestCombineTLSConfigSelectsWildcardBySNI(t *testing.T) {
 	if !containsString(combined.NextProtos, "http/1.1") {
 		t.Fatalf("NextProtos = %v, want http/1.1", combined.NextProtos)
 	}
+}
+
+func TestNewWildcardCertmagicInitializesIssuer(t *testing.T) {
+	cfg := &config.TLSConfig{
+		Domains:      []string{"*.example.com"},
+		Email:        "admin@example.com",
+		DNSUsername:  "user",
+		DNSPassword:  "pass",
+		CacheDir:     t.TempDir(),
+		DNSProvider:  "regru",
+	}
+	magic, stop, wildcards, err := newWildcardCertmagic(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop != nil {
+		t.Cleanup(stop)
+	}
+	if len(wildcards) != 1 || wildcards[0] != "*.example.com" {
+		t.Fatalf("wildcards = %v", wildcards)
+	}
+	if len(magic.Issuers) != 1 {
+		t.Fatalf("issuers = %d, want 1", len(magic.Issuers))
+	}
+
+	// Литерал ACMEIssuer без NewACMEIssuer паникует здесь на неинициализированном
+	// mutex; с правильной инициализацией должен вернуться только error/timeout.
+	issuer, ok := magic.Issuers[0].(*certmagic.ACMEIssuer)
+	if !ok {
+		t.Fatalf("issuer type = %T, want *certmagic.ACMEIssuer", magic.Issuers[0])
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	_ = issuer.PreCheck(ctx, wildcards, true)
 }
 
 func TestRegruDNSAppendAndDelete(t *testing.T) {

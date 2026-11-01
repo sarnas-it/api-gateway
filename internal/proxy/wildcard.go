@@ -146,9 +146,26 @@ func hostMatchesWildcard(host string, patterns []string) bool {
 	return false
 }
 
-// buildWildcardCertmagic создаёт certmagic с DNS-01 для wildcard-доменов.
-// Возвращает nil, если wildcard-доменов нет.
+// buildWildcardCertmagic создаёт certmagic с DNS-01 для wildcard-доменов и
+// сразу выпускает/проверяет сертификаты. Возвращает nil, если wildcard-доменов
+// нет.
 func buildWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*certmagic.Config, func(), []string, error) {
+	magic, stop, wildcards, err := newWildcardCertmagic(tlsCfg, logger)
+	if err != nil || magic == nil {
+		return magic, stop, wildcards, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	if err := magic.ManageSync(ctx, wildcards); err != nil {
+		stop()
+		return nil, nil, nil, fmt.Errorf("wildcard certificates: %w", err)
+	}
+	return magic, stop, wildcards, nil
+}
+
+// newWildcardCertmagic только собирает конфиг, без обращения к ACME.
+func newWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*certmagic.Config, func(), []string, error) {
 	wildcards := wildcardDomains(tlsCfg.Domains)
 	if len(wildcards) == 0 {
 		return nil, nil, nil, nil
@@ -178,30 +195,24 @@ func buildWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*cert
 	magic := certmagic.New(cache, certmagic.Config{
 		Storage: storage,
 		Logger:  logger.Named("certmagic"),
-		Issuers: []certmagic.Issuer{&certmagic.ACMEIssuer{
-			CA:                      ca,
-			Email:                   tlsCfg.Email,
-			Agreed:                  true,
-			DisableHTTPChallenge:    true,
-			DisableTLSALPNChallenge: true,
-			DNS01Solver: &certmagic.DNS01Solver{
-				DNSManager: certmagic.DNSManager{
-					DNSProvider:        provider,
-					TTL:                60 * time.Second,
-					PropagationTimeout: tlsCfg.DNSPropagationTimeout,
-					Logger:             logger.Named("certmagic-dns"),
-				},
-			},
-		}},
 	})
+	issuer := certmagic.NewACMEIssuer(magic, certmagic.ACMEIssuer{
+		CA:                      ca,
+		Email:                   tlsCfg.Email,
+		Agreed:                  true,
+		DisableHTTPChallenge:    true,
+		DisableTLSALPNChallenge: true,
+		DNS01Solver: &certmagic.DNS01Solver{
+			DNSManager: certmagic.DNSManager{
+				DNSProvider:        provider,
+				TTL:                60 * time.Second,
+				PropagationTimeout: tlsCfg.DNSPropagationTimeout,
+				Logger:             logger.Named("certmagic-dns"),
+			},
+		},
+	})
+	magic.Issuers = []certmagic.Issuer{issuer}
 	magicPtr.Store(magic)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	if err := magic.ManageSync(ctx, wildcards); err != nil {
-		cache.Stop()
-		return nil, nil, nil, fmt.Errorf("wildcard certificates: %w", err)
-	}
 	return magic, cache.Stop, wildcards, nil
 }
 
