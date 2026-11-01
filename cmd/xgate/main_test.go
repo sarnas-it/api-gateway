@@ -81,7 +81,7 @@ modules:
 	}
 
 	lock := filepath.Join(dir, "xgate.lock")
-	if err := writeLock(lock, dir, "code.sarnas.ru/api-gateway", []moduleSpec{spec}); err != nil {
+	if err := writeLock(lock, dir, "code.sarnas.ru/api-gateway", []moduleSpec{spec}, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(lock)
@@ -91,6 +91,20 @@ modules:
 	if !strings.Contains(string(raw), "code.sarnas.ru/api-gateway/plugins/dns/cloudflare") &&
 		!strings.Contains(string(raw), "github.com/acme/plugin") {
 		t.Fatalf("lock = %s", raw)
+	}
+}
+
+func TestCollectDeps(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test-build\n\ngo 1.26.9\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deps, err := collectDeps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deps) != 1 || deps[0].Path != "test-build" {
+		t.Fatalf("deps = %+v", deps)
 	}
 }
 
