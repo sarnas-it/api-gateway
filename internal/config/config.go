@@ -79,6 +79,16 @@ type TLSConfig struct {
 	// WorkerClientCAFile — PEM-файл с CA (или набором CA), которым проверяются
 	// клиентские сертификаты воркеров. Обязателен при worker_port > 0.
 	WorkerClientCAFile string `yaml:"worker_client_ca_file"`
+
+	// DNSProvider включает ACME DNS-01 для wildcard-доменов. Сейчас
+	// поддерживается "regru". Без него wildcard запрещён, как и раньше.
+	DNSProvider string `yaml:"dns_provider"`
+	// DNSUsername/DNSPassword — доступ к API провайдера. Секреты подставляются
+	// из окружения: "${REGRU_USER}", "${REGRU_PASSWORD}".
+	DNSUsername string `yaml:"dns_username"`
+	DNSPassword string `yaml:"dns_password"`
+	// DNSPropagationTimeout — сколько ждать появления TXT-записи; 0 → 2 минуты.
+	DNSPropagationTimeout time.Duration `yaml:"dns_propagation_timeout"`
 }
 
 // StaticApp конфигурация SPA фронтенда
@@ -890,9 +900,31 @@ func (c *Config) validate() error {
 		if len(c.TLS.Domains) == 0 {
 			return fmt.Errorf("at least one domain is required when TLS is enabled")
 		}
+		hasWildcard := false
 		for _, domain := range c.TLS.Domains {
-			if strings.Contains(domain, "*") {
-				return fmt.Errorf("tls.domains: wildcard domain %q is not supported: autocert validates only HTTP-01/TLS-ALPN-01; list explicit hostnames or use certmagic with DNS-01", domain)
+			if !strings.Contains(domain, "*") {
+				continue
+			}
+			if !strings.HasPrefix(domain, "*.") || strings.Count(domain, ".") < 2 {
+				return fmt.Errorf("tls.domains: unsupported wildcard %q, want *.example.com", domain)
+			}
+			hasWildcard = true
+		}
+		if hasWildcard && c.TLS.DNSProvider == "" {
+			return fmt.Errorf("tls.domains: wildcard requires tls.dns_provider (DNS-01); autocert supports only HTTP-01/TLS-ALPN-01")
+		}
+		if c.TLS.DNSProvider != "" {
+			if c.TLS.DNSProvider != "regru" {
+				return fmt.Errorf("tls.dns_provider: unsupported provider %q, want regru", c.TLS.DNSProvider)
+			}
+			if c.TLS.DNSUsername == "" || c.TLS.DNSPassword == "" {
+				return fmt.Errorf("tls.dns_username and tls.dns_password are required when tls.dns_provider is set")
+			}
+			if !hasWildcard {
+				return fmt.Errorf("tls.dns_provider requires at least one wildcard domain in tls.domains")
+			}
+			if c.TLS.DNSPropagationTimeout < 0 {
+				return fmt.Errorf("tls.dns_propagation_timeout must be >= 0")
 			}
 		}
 		if c.TLS.Email == "" {

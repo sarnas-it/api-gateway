@@ -36,7 +36,7 @@ func buildCertManager(tls *config.TLSConfig) *autocert.Manager {
 
 	manager := &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(tls.Domains...),
+		HostPolicy: autocert.HostWhitelist(exactDomains(tls.Domains)...),
 		Cache:      autocert.DirCache(cacheDir),
 		Email:      tls.Email,
 	}
@@ -50,6 +50,18 @@ func buildCertManager(tls *config.TLSConfig) *autocert.Manager {
 	}
 
 	return manager
+}
+
+// exactDomains отбрасывает wildcard-шаблоны: их обслуживает certmagic через
+// DNS-01, autocert такие имена выпускать не умеет.
+func exactDomains(domains []string) []string {
+	out := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if !strings.Contains(d, "*") {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // metricsOverHTTPHandler отдаёт /metrics напрямую (мидлварь внутри main
@@ -119,10 +131,10 @@ func publicWorkerMutedHandler(next http.Handler) http.Handler {
 }
 
 // buildWorkerTLSConfig собирает TLS-конфиг отдельного листенера воркеров:
-// тот же серверный сертификат от autocert, но обязательная проверка клиентского
+// тот же серверный сертификат, но обязательная проверка клиентского
 // сертификата по указанному CA.
-func buildWorkerTLSConfig(certManager *autocert.Manager, clientCAs *x509.CertPool) *tls.Config {
-	tlsConfig := certManager.TLSConfig()
+func buildWorkerTLSConfig(base *tls.Config, clientCAs *x509.CertPool) *tls.Config {
+	tlsConfig := base.Clone()
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = clientCAs
 	tlsConfig.MinVersion = tls.VersionTLS12
@@ -133,6 +145,20 @@ func (mp *MultiProxy) startTLS() error {
 	tlsCfg := mp.config.Load().TLS
 
 	certManager := buildCertManager(tlsCfg)
+	autoTLS := certManager.TLSConfig()
+
+	wildcardMagic, stopWildcard, wildcardPatterns, err := buildWildcardCertmagic(tlsCfg, mp.logger)
+	if err != nil {
+		return fmt.Errorf("wildcard certificates: %w", err)
+	}
+	if stopWildcard != nil {
+		mp.certmagicStop = stopWildcard
+	}
+	var wildcardTLS *tls.Config
+	if wildcardMagic != nil {
+		wildcardTLS = wildcardMagic.TLSConfig()
+	}
+	serverTLS := combineTLSConfig(autoTLS, wildcardTLS, wildcardPatterns)
 
 	// CA грузим до старта любого листенера: ошибка конфигурации mTLS должна
 	// ронять процесс, а не оставлять воркеров без аутентификации.
@@ -156,7 +182,7 @@ func (mp *MultiProxy) startTLS() error {
 		ReadTimeout:  mp.config.Load().Server.ReadTimeout,
 		WriteTimeout: mp.config.Load().Server.WriteTimeout,
 		IdleTimeout:  mp.config.Load().Server.IdleTimeout,
-		TLSConfig:    certManager.TLSConfig(),
+		TLSConfig:    serverTLS,
 	}
 	mp.httpsServer = tlsServer
 
@@ -177,7 +203,7 @@ func (mp *MultiProxy) startTLS() error {
 			ReadTimeout:  mp.config.Load().Server.ReadTimeout,
 			WriteTimeout: mp.config.Load().Server.WriteTimeout,
 			IdleTimeout:  mp.config.Load().Server.IdleTimeout,
-			TLSConfig:    buildWorkerTLSConfig(certManager, workerClientCAs),
+			TLSConfig:    buildWorkerTLSConfig(serverTLS, workerClientCAs),
 		}
 		mp.workerServer = workerServer
 	}
@@ -186,6 +212,7 @@ func (mp *MultiProxy) startTLS() error {
 		zap.Int("https_port", tlsCfg.Port),
 		zap.Int("http_port", tlsCfg.HTTPPort),
 		zap.Strings("domains", tlsCfg.Domains),
+		zap.Strings("wildcard_domains", wildcardPatterns),
 		zap.String("email", tlsCfg.Email),
 		zap.String("cache_dir", tlsCfg.CacheDir),
 		zap.Bool("staging", tlsCfg.Staging),

@@ -434,6 +434,60 @@ tls:
 	}
 }
 
+func TestTLS_WildcardWithDNSProviderAccepted(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "example.com"
+    - "*.example.com"
+  email: "admin@example.com"
+  dns_provider: "regru"
+  dns_username: "user"
+  dns_password: "pass"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TLS.DNSProvider != "regru" {
+		t.Fatalf("dns_provider = %q", cfg.TLS.DNSProvider)
+	}
+}
+
+func TestTLS_DNSProviderValidation(t *testing.T) {
+	base := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  email: "admin@example.com"
+%s
+`
+	cases := []struct {
+		name  string
+		extra string
+	}{
+		{"missing credentials", "  domains: [\"*.example.com\"]\n  dns_provider: regru"},
+		{"unsupported provider", "  domains: [\"*.example.com\"]\n  dns_provider: cloudflare\n  dns_username: u\n  dns_password: p"},
+		{"provider without wildcard", "  domains: [example.com]\n  dns_provider: regru\n  dns_username: u\n  dns_password: p"},
+		{"negative propagation", "  domains: [\"*.example.com\"]\n  dns_provider: regru\n  dns_username: u\n  dns_password: p\n  dns_propagation_timeout: -1s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfig(t, fmt.Sprintf(base, tc.extra))
+			if _, _, err := Load(path); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestTLS_NoEmail(t *testing.T) {
 	yaml := `
 targets:

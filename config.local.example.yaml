@@ -33,6 +33,11 @@ application:
 #   staging: false                # true → ACME staging CA + cache_dir/staging
 #   directory_url: ""             # необязательно: свой ACME directory URL (перекрывает staging)
 #   redirect_http: true
+#   # Wildcard-домены: DNS-01 через API reg.ru (секреты — из env).
+#   # dns_provider: "regru"
+#   # dns_username: "${REGRU_USER}"
+#   # dns_password: "${REGRU_PASSWORD}"
+#   # dns_propagation_timeout: 5m
 #   # Отдельный mTLS-листенер для /api/v1/workers/*; 0 — выключен.
 #   worker_port: 8444
 #   # PEM-файл CA для проверки клиентских сертификатов (обязателен при worker_port > 0).

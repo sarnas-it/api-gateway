@@ -22,7 +22,7 @@
 - Раздача статики и SPA с fallback на `index.html`.
 - Service discovery Docker/Podman по labels с аварийным фолбэком в файл состояния.
 - Вебхуки и NATS: события `on_request`/`on_response`, батчинг, backpressure.
-- Автоматический TLS (Let's Encrypt, в т.ч. staging), метрики и трейсинг (OpenTelemetry).
+- Автоматический TLS (Let's Encrypt: HTTP-01/TLS-ALPN-01 и DNS-01 для wildcard), метрики и трейсинг (OpenTelemetry).
 
 ## Как читать справочник
 

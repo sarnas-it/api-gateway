@@ -150,7 +150,7 @@ func TestMetricsOverHTTPHandler(t *testing.T) {
 func TestBuildWorkerTLSConfig_RequiresAndVerifiesClientCert(t *testing.T) {
 	_, pool := writeTestCA(t)
 
-	cfg := buildWorkerTLSConfig(&autocert.Manager{Prompt: autocert.AcceptTOS}, pool)
+	cfg := buildWorkerTLSConfig((&autocert.Manager{Prompt: autocert.AcceptTOS}).TLSConfig(), pool)
 
 	if cfg.ClientAuth != tls.RequireAndVerifyClientCert {
 		t.Errorf("ClientAuth = %v, want RequireAndVerifyClientCert", cfg.ClientAuth)

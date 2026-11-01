@@ -107,7 +107,7 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `enabled` | bool | `false` | Включает HTTPS-сервер | `true` |
 | `port` | int | `443` | HTTPS-порт | `443` |
 | `http_port` | int | `80` | HTTP-порт для ACME-challenge и редиректа | `80` |
-| `domains` | []string | — | Домены сертификата; обязательны при `enabled: true`. Только явные хосты: wildcard не поддерживается (ACME HTTP-01/TLS-ALPN-01) | `["api.example.com"]` |
+| `domains` | []string | — | Домены сертификата; обязательны при `enabled: true`. Wildcard (`*.example.com`) — только вместе с `dns_provider` | `["api.example.com", "*.example.com"]` |
 | `email` | string | — | Email для регистрации в Let's Encrypt; обязателен | `admin@example.com` |
 | `cache_dir` | string | `/var/lib/api-gateway/certs` | Каталог кеша сертификатов; при `staging` используется подкаталог `staging` | `/var/lib/api-gateway/certs` |
 | `staging` | bool | `false` | `true` — ACME staging CA (для отладки), `false` — production Let's Encrypt | `false` |
@@ -115,15 +115,19 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `redirect_http` | bool | `false` | Редиректит HTTP на HTTPS; `/health` и `/ready` на HTTP-порту отвечают 200 | `true` |
 | `worker_port` | int | `0` | Порт отдельного mTLS-листенера для `/api/v1/workers/*`; `0` — выключен | `8444` |
 | `worker_client_ca_file` | string | — | PEM-файл CA (один или несколько сертификатов) для проверки клиентских сертификатов; обязателен при `worker_port > 0` | `/etc/api-gateway/worker-ca.pem` |
+| `dns_provider` | string | `""` | Включает ACME DNS-01 для wildcard; сейчас поддерживается `regru` | `regru` |
+| `dns_username` | string | `""` | Логин API reg.ru; секрет лучше подставлять из env | `${REGRU_USER}` |
+| `dns_password` | string | `""` | Пароль API reg.ru; секрет лучше подставлять из env | `${REGRU_PASSWORD}` |
+| `dns_propagation_timeout` | duration | `2m` | Сколько ждать появления TXT-записи; 0 — дефолт certmagic | `5m` |
 
 При включённом TLS запускаются два сервера: HTTPS на `port` и HTTP на `http_port` для ACME-challenge и редиректа. `staging: true` использует реальный staging CA и отдельный подкаталог кеша, чтобы staging-сертификаты не смешивались с production.
 
-Wildcard-домены (`*.example.com`) не поддерживаются: `autocert` подтверждает владение доменом через HTTP-01 или TLS-ALPN-01, а для wildcard нужен DNS-01. Конфиг с wildcard отклоняется при валидации — перечислите явные хосты. Если поддомены нужны динамически, используйте `certmagic` с DNS-01.
+Точные домены обслуживает `autocert` (HTTP-01/TLS-ALPN-01). Wildcard-домены (`*.example.com`) обслуживает `certmagic` через DNS-01: они требуют `dns_provider` и учётных данных провайдера. Смешивать можно: `["chatcom.online", "*.chatcom.online", "sarnas.ru"]` — wildcard пойдёт через DNS-01, остальные через HTTP-01.
 
 Если задан `worker_port`, поднимается третий листенер — HTTPS с
 `ClientAuth: RequireAndVerifyClientCert` и проверкой клиентского сертификата по
-CA из `worker_client_ca_file`. Серверный сертификат — тот же autocert-сертификат,
-что и на `port`. На этом листенере доступны только пути `/api/v1/workers/*`,
+CA из `worker_client_ca_file`. Серверный сертификат — тот же, что и на `port`
+(autocert для точных доменов, certmagic для wildcard). На этом листенере доступны только пути `/api/v1/workers/*`,
 остальные запросы получают `404`. При `worker_port > 0` файл CA обязателен и
 читается при старте: ошибка чтения/разбора, отсутствие CA или конфликт
 `worker_port` с `port`/`http_port` — ошибка запуска (fail closed).
