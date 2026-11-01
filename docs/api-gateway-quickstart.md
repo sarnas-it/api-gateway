@@ -46,7 +46,7 @@ docker run --rm -p 9000:80 traefik/whoami
 Перед запуском конфиг можно проверить, не поднимая шлюз:
 
 ```bash
-go run ./cmd/ -config config.local.yaml -check
+go run ./cmd/gateway/ -config config.local.yaml -check
 # config OK: config.local.yaml
 #   targets: 1, routing rules: 1, discovery: false, permissions: false
 ```
@@ -57,7 +57,7 @@ go run ./cmd/ -config config.local.yaml -check
 
 ```bash
 go mod download
-go run ./cmd/ -config config.local.yaml
+go run ./cmd/gateway/ -config config.local.yaml
 ```
 
 Шлюз слушает `:8080` и проксирует запросы на `http://127.0.0.1:9000`.
@@ -92,7 +92,7 @@ curl -s http://localhost:8080/metrics
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 OTEL_EXPORTER_OTLP_INSECURE=true \
-go run ./cmd/ -config config.local.yaml
+go run ./cmd/gateway/ -config config.local.yaml
 ```
 
 Без `OTEL_EXPORTER_OTLP_ENDPOINT` трейсинг выключен и на горячем пути ничего не стоит. Если конфиг содержит неизвестные ключи, шлюз не падает — он пишет предупреждение в лог с точечным путём ключа.

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -18,9 +18,10 @@ import (
 	"code.sarnas.ru/api-gateway/internal/discovery"
 	"code.sarnas.ru/api-gateway/internal/logger"
 	"code.sarnas.ru/api-gateway/internal/proxy"
+	"code.sarnas.ru/api-gateway/pkg/plugin"
 )
 
-func main() {
+func Main() {
 	configPath := flag.String("config", "/etc/proxy/config.yaml", "path to config file")
 	check := flag.Bool("check", false, "validate config and exit (0 = valid, 1 = invalid)")
 	strict := flag.Bool("strict", false, "with -check: treat unknown-key warnings as errors")
@@ -55,6 +56,13 @@ func main() {
 
 	for _, key := range warnings {
 		log.Warn("Unknown config key", zap.String("key", key))
+	}
+	if mods := plugin.Modules(); len(mods) > 0 {
+		names := make([]string, 0, len(mods))
+		for _, m := range mods {
+			names = append(names, m.Name())
+		}
+		log.Info("Compiled modules", zap.Strings("modules", names))
 	}
 	defer func(log *zap.Logger) {
 		err := log.Sync()

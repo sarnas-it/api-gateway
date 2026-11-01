@@ -115,11 +115,23 @@ cp config.local.example.yaml config.local.yaml
 # Отредактировать config.local.yaml — указать свои сервисы и секрет для JWT
 
 # Проверить конфиг, не запуская гейтвей
-go run ./cmd/ -config config.local.yaml -check
+go run ./cmd/gateway/ -config config.local.yaml -check
 
 # Запуск
-go run ./cmd/ -config config.local.yaml
+go run ./cmd/gateway/ -config config.local.yaml
 ```
+
+### Сборка с модулями (`xgate`)
+
+`xgate` — compile-time сборщик в духе `xcaddy`: генерирует `main.go` с
+blank-импортами выбранных модулей и собирает бинарник.
+
+```bash
+go build -o bin/xgate ./cmd/xgate
+bin/xgate build --with github.com/acme/gateway-module@v1.0.0 --output bin/api-gateway-custom
+```
+
+Подробнее — [`docs/xgate.md`](docs/xgate.md).
 
 ### Проверка конфигурации
 
@@ -524,7 +536,7 @@ volumes:
 go mod download
 
 # Запуск с локальным конфигом
-go run ./cmd/ -config config.local.yaml
+go run ./cmd/gateway/ -config config.local.yaml
 
 # Линт
 make lint

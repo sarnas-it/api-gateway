@@ -17,7 +17,7 @@ GOLANGCI ?= golangci-lint
 all: fmt vet lint build test
 
 build:
-	$(GO) build -ldflags="-w -s" -trimpath -o $(BIN_DIR)/$(BINARY) ./cmd/
+	$(GO) build -ldflags="-w -s" -trimpath -o $(BIN_DIR)/$(BINARY) ./cmd/gateway/
 
 run: build
 	./$(BIN_DIR)/$(BINARY) -config $(CONFIG)
