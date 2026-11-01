@@ -106,12 +106,13 @@ func (m *Manager) Start(ctx context.Context) error {
 }
 
 // SetBase обновляет статический конфиг (например, после SIGHUP) и пересобирает
-// итоговый конфиг с последним результатом discovery.
-func (m *Manager) SetBase(cfg *config.Config) {
+// итоговый конфиг с последним результатом discovery. Ошибка возвращается, если
+// применение отклонено (например, изменение требует рестарта).
+func (m *Manager) SetBase(cfg *config.Config) error {
 	m.mu.Lock()
 	m.base = cfg
 	m.mu.Unlock()
-	m.apply()
+	return m.apply()
 }
 
 // Stop останавливает discovery. Остановка терминальна: dockerProvider.Stop
@@ -199,7 +200,7 @@ func (m *Manager) saveState(stateFile string, result Result) {
 	}
 }
 
-func (m *Manager) apply() {
+func (m *Manager) apply() error {
 	// Сериализуем merge→validate→dedup→onUpdate целиком, чтобы SetBase (SIGHUP)
 	// и onResult (горутина провайдера) не перемешивали lastJSON и не вызывали
 	// onUpdate конкурентно. m.mu не удерживается во время колбэка.
@@ -216,30 +217,31 @@ func (m *Manager) apply() {
 	merged := config.Merge(base, result.Targets, result.Rules)
 	if err := merged.Validate(); err != nil {
 		m.log.Warn("discovery: merged config invalid, keeping previous", zap.Error(err))
-		return
+		return err
 	}
 
 	normalized, err := json.Marshal(merged)
 	if err != nil {
 		m.log.Warn("discovery: marshal merged config failed", zap.Error(err))
-		return
+		return err
 	}
 	key := string(normalized)
 
 	m.mu.Lock()
 	if key == m.lastJSON {
 		m.mu.Unlock()
-		return
+		return nil
 	}
 	m.mu.Unlock()
 
 	if err := m.onUpdate(merged); err != nil {
 		// Не фиксируем lastJSON: следующий синк повторит применение.
 		m.log.Warn("discovery: onUpdate failed, will retry", zap.Error(err))
-		return
+		return err
 	}
 
 	m.mu.Lock()
 	m.lastJSON = key
 	m.mu.Unlock()
+	return nil
 }

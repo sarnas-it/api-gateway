@@ -1099,6 +1099,10 @@ func (tp *TargetProxy) checkHealth(logger *zap.Logger, mp *MultiProxy) {
 // останавливаются старые healthcheck'и. При любой ошибке прежнее состояние
 // (конфиг, таргеты, правила, healthcheck'и) остаётся нетронутым.
 func (mp *MultiProxy) Reload(cfg *config.Config) error {
+	if changes := immutableReloadChanges(mp.config.Load(), cfg); len(changes) > 0 {
+		return restartRequiredError(changes)
+	}
+
 	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
 	if err != nil {
 		return fmt.Errorf("server.trusted_proxies: %w", err)
