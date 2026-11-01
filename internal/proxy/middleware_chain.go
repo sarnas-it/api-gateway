@@ -283,7 +283,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		rc := mp.findRouteConfig(rule)
 		var targetProxy *TargetProxy
 		if rc != nil {
-			targetProxy = rc.pickTarget(cbEnabled, mp.clientIP(r))
+			targetProxy = mp.pickTargetForRequest(rc, cbEnabled, r, rw)
 		} else {
 			mp.mu.RLock()
 			targetProxy = mp.targets[target.Name]
