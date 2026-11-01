@@ -31,8 +31,8 @@ func reloadBaseConfig() *config.Config {
 			Email:        "admin@example.com",
 			RedirectHTTP: true,
 		},
-		JWT:        config.JWTConfig{SecretKey: "secret", Algorithm: "HS256"},
-		BasicAuth:  config.BasicAuthConfig{Enabled: true, Username: "u", Password: "p"},
+		JWT:       config.JWTConfig{SecretKey: "secret", Algorithm: "HS256"},
+		BasicAuth: config.BasicAuthConfig{Enabled: true, Username: "u", Password: "p"},
 		Permissions: config.PermissionsConfig{
 			Enabled:         true,
 			ServiceURL:      "http://permissions",

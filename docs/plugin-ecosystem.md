@@ -17,7 +17,12 @@
 
 - `plugin.Module` — имя и регистрация.
 - `plugin.DNSProvider` — `New(map[string]string) (libdns.RecordAppender, libdns.RecordDeleter, error)`.
-- Дальше: `AuthConnector`, `DiscoveryProvider`, `HTTPMiddleware`, `Storage`.
+- `plugin.HTTPMiddleware` — `Wrap(http.Handler) http.Handler`.
+- Дальше: `AuthConnector`, `DiscoveryProvider`, `Storage`.
+
+Первый реальный модуль: `plugins/dns/cloudflare` (обёртка `libdns/cloudflare`).
+`tls.dns_provider: cloudflare` работает только в бинарнике, собранном
+`xgate --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare`.
 
 DNS-провайдер Caddy (`dns.providers.*`) почти всегда обёртка над `libdns`:
 берём `github.com/libdns/<provider>` и пишем тонкий xgate-модуль, который его
