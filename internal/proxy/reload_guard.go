@@ -13,6 +13,8 @@ import (
 // применить на лету: они захвачены при создании листенеров, логгера или
 // auth-компонентов. Reload отклоняет такой конфиг целиком, а не применяет
 // половину и не рапортует успех.
+//
+// shortcut: immutable-поля отклоняются вместо пересборки handler chain; пересборка требует замены middleware и несёт риск утечек publisher/permissions; пересмотреть, когда hot-reload JWT/TLS станет обязательным.
 var ErrRestartRequired = errors.New("configuration change requires restart")
 
 // immutableReloadChanges перечисляет поля, которые Reload не умеет применять.
