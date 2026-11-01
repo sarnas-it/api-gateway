@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -190,6 +191,8 @@ type MultiProxy struct {
 	httpServer         *http.Server
 	httpsServer        *http.Server
 	workerServer       *http.Server
+	http3Server        *http3.Server
+	http3Conn          *net.UDPConn
 	globalLimiter      *rate.Limiter
 	handler            http.Handler
 	tracerProvider     *TracerProvider
@@ -1319,6 +1322,15 @@ func (mp *MultiProxy) Stop(ctx context.Context) error {
 		if err := mp.workerServer.Shutdown(ctx); err != nil {
 			mp.logger.Error("Worker mTLS server shutdown error", zap.Error(err))
 		}
+	}
+
+	if mp.http3Server != nil {
+		if err := mp.http3Server.Close(); err != nil {
+			mp.logger.Error("HTTP/3 server shutdown error", zap.Error(err))
+		}
+	}
+	if mp.http3Conn != nil {
+		_ = mp.http3Conn.Close()
 	}
 
 	if err := mp.tracerProvider.Shutdown(ctx); err != nil {

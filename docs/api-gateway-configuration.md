@@ -101,6 +101,17 @@ Gzip-сжатие ответов. Выключено по умолчанию; в
 
 Сжатие не применяется к `HEAD`, `101 Upgrade` (WebSocket), `text/event-stream`, уже сжатым ответам (`Content-Encoding` задан) и ответам без сжимаемого `Content-Type`. Заголовок `Vary: Accept-Encoding` добавляется автоматически.
 
+## http3
+
+HTTP/3 (QUIC) на том же TLS-конфиге. Требует `tls.enabled: true`.
+
+| Поле | Тип | По умолчанию | Смысл и значения | Пример |
+|---|---|---|---|---|
+| `enabled` | bool | `false` | Включает UDP/QUIC-листенер | `true` |
+| `port` | int | `tls.port` | UDP-порт; обычно тот же 443 | `443` |
+
+В ответах HTTP/1.1/2 добавляется `Alt-Svc: h3=":443"; ma=...`. Для публичного приёма нужен проброс UDP (в Docker — `443:443/udp`), а на хосте — достаточный `net.core.rmem_max` (quic-go рекомендует 7 MiB). Если перед шлюзом стоит Cloudflare, HTTP/3 до клиента терминирует он, и origin-UDP может быть не нужен.
+
 ## admin
 
 Loopback admin API для статуса и атомарного reload.

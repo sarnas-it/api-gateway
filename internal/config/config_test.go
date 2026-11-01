@@ -314,6 +314,45 @@ targets:
 	}
 }
 
+func TestHTTP3DefaultsAndValidation(t *testing.T) {
+	base := `
+targets:
+  - name: api
+    url: http://api:9001
+%s
+`
+	path := writeTempConfig(t, fmt.Sprintf(base, `
+tls:
+  enabled: true
+  domains: ["api.example.com"]
+  email: "admin@example.com"
+http3:
+  enabled: true
+`))
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP3.Port != 443 {
+		t.Fatalf("http3 port = %d, want 443", cfg.HTTP3.Port)
+	}
+
+	if _, _, err := Load(writeTempConfig(t, fmt.Sprintf(base, "http3:\n  enabled: true"))); err == nil {
+		t.Fatal("http3 without tls must be rejected")
+	}
+	if _, _, err := Load(writeTempConfig(t, fmt.Sprintf(base, `
+tls:
+  enabled: true
+  domains: ["api.example.com"]
+  email: "admin@example.com"
+http3:
+  enabled: true
+  port: 70000
+`))); err == nil {
+		t.Fatal("invalid http3 port must be rejected")
+	}
+}
+
 func TestRouting_LBPolicyValidation(t *testing.T) {
 	base := `
 targets:

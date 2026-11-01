@@ -3,12 +3,15 @@ package proxy
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -75,6 +78,14 @@ func metricsOverHTTPHandler(main, redirect http.Handler) http.Handler {
 			return
 		}
 		redirect.ServeHTTP(w, r)
+	})
+}
+
+// altSvcMiddleware объявляет HTTP/3 в ответах HTTP/1.1/2.
+func altSvcMiddleware(next http.Handler, srv *http3.Server) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = srv.SetQUICHeaders(w.Header())
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -194,6 +205,31 @@ func (mp *MultiProxy) startTLS() error {
 	publicHandler := http.Handler(mp)
 	if tlsCfg.WorkerPort > 0 {
 		publicHandler = publicWorkerMutedHandler(publicHandler)
+	}
+
+	h3Cfg := mp.config.Load().HTTP3
+	if h3Cfg.Enabled {
+		h3TLS := serverTLS.Clone()
+		h3TLS.NextProtos = []string{"h3"}
+		h3Server := &http3.Server{
+			Addr:      fmt.Sprintf(":%d", h3Cfg.Port),
+			Port:      h3Cfg.Port,
+			TLSConfig: h3TLS,
+			Handler:   publicHandler,
+		}
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: h3Cfg.Port})
+		if err != nil {
+			return fmt.Errorf("HTTP/3 listen: %w", err)
+		}
+		mp.http3Server = h3Server
+		mp.http3Conn = conn
+		publicHandler = altSvcMiddleware(publicHandler, h3Server)
+		go func() {
+			if err := h3Server.Serve(conn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				mp.logger.Error("HTTP/3 server error", zap.Error(err))
+			}
+		}()
+		mp.logger.Info("Starting HTTP/3 server", zap.Int("udp_port", h3Cfg.Port))
 	}
 
 	tlsServer := &http.Server{
