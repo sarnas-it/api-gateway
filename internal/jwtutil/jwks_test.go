@@ -424,3 +424,33 @@ func TestJWKSValidator_ConcurrentColdStartDownEndpointSingleFetch(t *testing.T) 
 		t.Fatalf("expected concurrent cold-start failures to share one JWKS attempt, got %d", got)
 	}
 }
+
+func TestJWKSValidator_DownEndpointNegativeCache(t *testing.T) {
+	// Последовательные запросы при недоступном IdP не должны ходить в сеть
+	// на каждый вызов: иначе падение IdP превращается в очередь запросов,
+	// каждый из которых ждёт jwksHTTPTimeout.
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	key := newRSAKey(t)
+	v, err := NewJWKSValidator(srv.URL, "RS256", true, false, "", zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := signRS256WithKid(t, key, "k1", jwt.MapClaims{
+		"sub": "1", "exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	for i := 0; i < 5; i++ {
+		if _, err := v.ParseAndValidate(token); err == nil {
+			t.Fatal("expected error for down JWKS endpoint")
+		}
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("expected one JWKS attempt inside the negative-cache window, got %d", got)
+	}
+}
