@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -431,6 +432,53 @@ tls:
 	}
 	if !strings.Contains(err.Error(), "wildcard") {
 		t.Fatalf("error must explain wildcard limitation, got: %v", err)
+	}
+}
+
+func TestTLSPolicyParsers(t *testing.T) {
+	if v, err := ParseTLSVersion("1.3"); err != nil || v != tls.VersionTLS13 {
+		t.Fatalf("ParseTLSVersion = %x, %v", v, err)
+	}
+	if _, err := ParseTLSVersion("1.1"); err == nil {
+		t.Fatal("TLS 1.1 must be rejected")
+	}
+	if suites, err := ParseCipherSuites([]string{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"}); err != nil || len(suites) != 1 {
+		t.Fatalf("ParseCipherSuites = %v, %v", suites, err)
+	}
+	if _, err := ParseCipherSuites([]string{"TLS_AES_128_GCM_SHA256"}); err == nil {
+		t.Fatal("TLS 1.3 cipher suite must be rejected as non-configurable")
+	}
+	if curves, err := ParseCurves([]string{"X25519", "P-256"}); err != nil || len(curves) != 2 {
+		t.Fatalf("ParseCurves = %v, %v", curves, err)
+	}
+	if _, err := ParseClientAuth("bogus"); err == nil {
+		t.Fatal("bogus client_auth must be rejected")
+	}
+}
+
+func TestTLS_PolicyValidation(t *testing.T) {
+	base := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains: ["api.example.com"]
+  email: "admin@example.com"
+%s
+`
+	cases := []string{
+		"  min_version: \"1.1\"",
+		"  cipher_suites: [\"NOPE\"]",
+		"  curves: [\"NOPE\"]",
+		"  client_auth: \"bogus\"",
+		"  client_auth: \"verify\"",
+	}
+	for _, extra := range cases {
+		path := writeTempConfig(t, fmt.Sprintf(base, extra))
+		if _, _, err := Load(path); err == nil {
+			t.Fatalf("expected validation error for %q", extra)
+		}
 	}
 }
 

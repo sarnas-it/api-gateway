@@ -176,6 +176,9 @@ func (mp *MultiProxy) startTLS() error {
 		}
 	}
 	serverTLS := combineTLSConfig(autoTLS, wildcardTLS, wildcardPatterns)
+	if err := applyTLSPolicy(serverTLS, tlsCfg); err != nil {
+		return fmt.Errorf("TLS policy: %w", err)
+	}
 
 	// CA грузим до старта любого листенера: ошибка конфигурации mTLS должна
 	// ронять процесс, а не оставлять воркеров без аутентификации.

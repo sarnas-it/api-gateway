@@ -33,6 +33,11 @@ application:
 #   staging: false                # true → ACME staging CA + cache_dir/staging
 #   directory_url: ""             # необязательно: свой ACME directory URL (перекрывает staging)
 #   redirect_http: true
+#   # min_version: "1.3"
+#   # cipher_suites: ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]
+#   # curves: ["X25519", "P-256"]
+#   # client_auth: "verify"          # mTLS на основном :443
+#   # client_ca_file: "/etc/api-gateway/clients-ca.pem"
 #   # Wildcard-домены: DNS-01 через API reg.ru (секреты — из env).
 #   # dns_provider: "regru"
 #   # dns_username: "${REGRU_USER}"

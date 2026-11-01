@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/url"
@@ -95,6 +96,100 @@ type TLSConfig struct {
 	// альтернатива DNS-01: файлы читаются при старте, ACME не вызывается.
 	WildcardCertFile string `yaml:"wildcard_cert_file"`
 	WildcardKeyFile  string `yaml:"wildcard_key_file"`
+
+	// MinVersion — минимальная версия TLS: "1.2" (по умолчанию) или "1.3".
+	MinVersion string `yaml:"min_version"`
+	// CipherSuites — имена TLS 1.0–1.2 cipher suites; TLS 1.3 не настраивается.
+	CipherSuites []string `yaml:"cipher_suites"`
+	// Curves — предпочтительные кривые: X25519, P-256, P-384, P-521.
+	Curves []string `yaml:"curves"`
+	// ClientAuth — mTLS на основном листенере: none/request/require/verify.
+	ClientAuth string `yaml:"client_auth"`
+	// ClientCAFile — PEM-файл CA для проверки клиентских сертификатов.
+	ClientCAFile string `yaml:"client_ca_file"`
+}
+
+// UpstreamTLSConfig — TLS к конкретному бэкенду.
+type UpstreamTLSConfig struct {
+	CAFile             string `yaml:"ca_file"`
+	ServerName         string `yaml:"server_name"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
+}
+
+// ParseTLSVersion переводит "1.2"/"1.3" в tls.VersionTLS12/13.
+func ParseTLSVersion(v string) (uint16, error) {
+	switch v {
+	case "", "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported TLS version %q, want 1.2 or 1.3", v)
+	}
+}
+
+// ParseCipherSuites переводит имена Go cipher suites в ID. TLS 1.3 suites
+// настраивать нельзя — они игнорируются Go, поэтому явно отклоняем.
+func ParseCipherSuites(names []string) ([]uint16, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	known := make(map[string]uint16)
+	for _, cs := range tls.CipherSuites() {
+		known[cs.Name] = cs.ID
+	}
+	out := make([]uint16, 0, len(names))
+	for _, name := range names {
+		if strings.HasPrefix(name, "TLS_AES_") || strings.HasPrefix(name, "TLS_CHACHA20_") {
+			return nil, fmt.Errorf("TLS 1.3 cipher suite %q is not configurable", name)
+		}
+		id, ok := known[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown cipher suite %q", name)
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// ParseCurves переводит имена кривых в tls.CurveID.
+func ParseCurves(names []string) ([]tls.CurveID, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	known := map[string]tls.CurveID{
+		"X25519": tls.X25519,
+		"P-256":  tls.CurveP256,
+		"P-384":  tls.CurveP384,
+		"P-521":  tls.CurveP521,
+	}
+	out := make([]tls.CurveID, 0, len(names))
+	for _, name := range names {
+		id, ok := known[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown curve %q", name)
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// ParseClientAuth переводит режим mTLS в tls.ClientAuthType.
+func ParseClientAuth(v string) (tls.ClientAuthType, error) {
+	switch v {
+	case "", "none":
+		return tls.NoClientCert, nil
+	case "request":
+		return tls.RequestClientCert, nil
+	case "require":
+		return tls.RequireAnyClientCert, nil
+	case "verify":
+		return tls.RequireAndVerifyClientCert, nil
+	default:
+		return 0, fmt.Errorf("unsupported client_auth %q, want none/request/require/verify", v)
+	}
 }
 
 // StaticApp конфигурация SPA фронтенда
@@ -191,6 +286,8 @@ type TargetConfig struct {
 	// выбора; >0 → вес.
 	Weight      *int   `yaml:"weight"`
 	HealthCheck string `yaml:"health_check"` // URL для проверки здоровья
+	// TLS — настройки TLS к HTTPS-бэкенду (свой CA, mTLS, skip-verify).
+	TLS *UpstreamTLSConfig `yaml:"tls,omitempty"`
 }
 
 // EffectiveWeight возвращает действующий вес таргета: nil трактуется как 1
@@ -857,8 +954,20 @@ func (c *Config) validate() error {
 		if target.URL == "" {
 			return fmt.Errorf("target.url is required for target %s", target.Name)
 		}
-		if _, err := url.Parse(target.URL); err != nil {
+		u, err := url.Parse(target.URL)
+		if err != nil {
 			return fmt.Errorf("target.url is invalid for target %s: %w", target.Name, err)
+		}
+		if target.TLS != nil {
+			if u.Scheme != "https" {
+				return fmt.Errorf("target %s: tls requires an https url", target.Name)
+			}
+			if (target.TLS.CertFile == "") != (target.TLS.KeyFile == "") {
+				return fmt.Errorf("target %s: tls.cert_file and tls.key_file must be set together", target.Name)
+			}
+			if target.TLS.CAFile != "" && target.TLS.InsecureSkipVerify {
+				return fmt.Errorf("target %s: tls.ca_file and tls.insecure_skip_verify are mutually exclusive", target.Name)
+			}
 		}
 	}
 
@@ -938,6 +1047,27 @@ func (c *Config) validate() error {
 			}
 			if c.TLS.DNSPropagationTimeout < 0 {
 				return fmt.Errorf("tls.dns_propagation_timeout must be >= 0")
+			}
+		}
+		if _, err := ParseTLSVersion(c.TLS.MinVersion); err != nil {
+			return fmt.Errorf("tls.min_version: %w", err)
+		}
+		if _, err := ParseCipherSuites(c.TLS.CipherSuites); err != nil {
+			return fmt.Errorf("tls.cipher_suites: %w", err)
+		}
+		if _, err := ParseCurves(c.TLS.Curves); err != nil {
+			return fmt.Errorf("tls.curves: %w", err)
+		}
+		clientAuth, err := ParseClientAuth(c.TLS.ClientAuth)
+		if err != nil {
+			return fmt.Errorf("tls.client_auth: %w", err)
+		}
+		if clientAuth == tls.RequireAndVerifyClientCert && strings.TrimSpace(c.TLS.ClientCAFile) == "" {
+			return fmt.Errorf("tls.client_ca_file is required when tls.client_auth is verify")
+		}
+		if strings.TrimSpace(c.TLS.ClientCAFile) != "" {
+			if _, err := LoadClientCAPool(c.TLS.ClientCAFile); err != nil {
+				return fmt.Errorf("invalid tls.client_ca_file: %w", err)
 			}
 		}
 		if c.TLS.Email == "" {
