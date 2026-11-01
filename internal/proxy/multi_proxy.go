@@ -167,6 +167,7 @@ type MultiProxy struct {
 	identity           *identity.Manager
 	publisher          *Publisher
 	trustedProxies     []*net.IPNet
+	certmagicStop      func()
 }
 
 // HealthChecker проверяет здоровье таргета
@@ -1239,6 +1240,10 @@ func (mp *MultiProxy) Stop(ctx context.Context) error {
 
 	if mp.publisher != nil {
 		mp.publisher.Close()
+	}
+
+	if mp.certmagicStop != nil {
+		mp.certmagicStop()
 	}
 
 	return nil

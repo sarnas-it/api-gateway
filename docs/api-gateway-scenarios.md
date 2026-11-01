@@ -266,7 +266,22 @@ tls:
 
 **Результат.** HTTPS-сервер на 443, HTTP на 80 обслуживает ACME-challenge и редиректит на HTTPS. `/health` и `/ready` на HTTP отвечают 200.
 
-**Оговорки.** Сначала проверяйте на `staging: true` — это реальный staging CA с отдельным кешем. `directory_url` перекрывает выбор CA по `staging`. Домен и email обязательны при включении. Wildcard-домены (`*.example.com`) не поддерживаются: `autocert` использует HTTP-01/TLS-ALPN-01, для wildcard нужен DNS-01 (`certmagic`).
+**Wildcard.** Для `*.example.com` нужен DNS-01 и доступ к API DNS-провайдера; точные домены при этом продолжают идти через HTTP-01:
+
+```yaml
+tls:
+  enabled: true
+  domains:
+    - "example.com"
+    - "*.example.com"
+  email: "admin@example.com"
+  dns_provider: "regru"
+  dns_username: "${REGRU_USER}"
+  dns_password: "${REGRU_PASSWORD}"
+  redirect_http: true
+```
+
+**Оговорки.** Сначала проверяйте на `staging: true` — это реальный staging CA с отдельным кешем. `directory_url` перекрывает выбор CA по `staging`. Домен и email обязательны при включении. Wildcard требует `dns_provider`; сейчас поддерживается reg.ru, а IP сервера должен быть разрешён в настройках API провайдера.
 
 ## 11. Service discovery по labels
 
