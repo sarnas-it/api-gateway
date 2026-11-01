@@ -314,6 +314,39 @@ targets:
 	}
 }
 
+func TestAdmin_DefaultsAndValidation(t *testing.T) {
+	base := `
+targets:
+  - name: api
+    url: http://api:9001
+admin:
+%s
+`
+	path := writeTempConfig(t, fmt.Sprintf(base, "  enabled: true"))
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Admin.Addr != "127.0.0.1:2019" {
+		t.Fatalf("admin addr = %q", cfg.Admin.Addr)
+	}
+
+	for _, extra := range []string{
+		"  enabled: true\n  addr: \"0.0.0.0:2019\"",
+		"  enabled: true\n  addr: \"bad\"",
+	} {
+		path := writeTempConfig(t, fmt.Sprintf(base, extra))
+		if _, _, err := Load(path); err == nil {
+			t.Fatalf("expected error for admin config %q", extra)
+		}
+	}
+
+	path = writeTempConfig(t, fmt.Sprintf(base, "  enabled: true\n  addr: \"0.0.0.0:2019\"\n  token: \"secret\""))
+	if _, _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCompression_DefaultsAndValidation(t *testing.T) {
 	base := `
 targets:

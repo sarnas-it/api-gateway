@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"code.sarnas.ru/api-gateway/internal/admin"
 	"code.sarnas.ru/api-gateway/internal/config"
 	"code.sarnas.ru/api-gateway/internal/discovery"
 	"code.sarnas.ru/api-gateway/internal/logger"
@@ -82,6 +83,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	var adminSrv *admin.Server
+	if cfg.Admin.Enabled {
+		reload := func() error {
+			newCfg, warnings, err := config.Load(*configPath)
+			if err != nil {
+				return err
+			}
+			for _, key := range warnings {
+				log.Warn("Unknown config key", zap.String("key", key))
+			}
+			return mgr.SetBase(newCfg)
+		}
+		adminSrv = admin.New(cfg.Admin, *configPath, reload, p.Status, log)
+		if err := adminSrv.Start(); err != nil {
+			log.Error("Failed to start admin API", zap.Error(err))
+			os.Exit(1)
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
@@ -139,6 +159,12 @@ shutdown:
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if adminSrv != nil {
+		if err := adminSrv.Shutdown(); err != nil {
+			log.Error("Error stopping admin API", zap.Error(err))
+		}
+	}
 
 	if err := mgr.Stop(); err != nil {
 		log.Error("Error stopping discovery", zap.Error(err))

@@ -10,6 +10,12 @@ server:
 #   level: 5
 #   min_size: 1024
 
+# Loopback admin API (status/reload); token — из env.
+# admin:
+#   enabled: true
+#   addr: "127.0.0.1:2019"
+#   token: "${ADMIN_TOKEN}"
+
 application:
   env: "dev"
   health_check: false

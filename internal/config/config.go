@@ -31,6 +31,14 @@ type Config struct {
 	Webhooks    []WebhookConfig   `yaml:"webhooks"`
 	Discovery   *DiscoveryConfig  `yaml:"discovery,omitempty"`
 	Compression CompressionConfig `yaml:"compression"`
+	Admin       AdminConfig       `yaml:"admin"`
+}
+
+// AdminConfig — loopback admin API (status/reload).
+type AdminConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+	Token   string `yaml:"token"`
 }
 
 // CompressionConfig — gzip-сжатие ответов.
@@ -763,6 +771,9 @@ func (c *Config) setDefaults() {
 	if c.Compression.MinSize == 0 {
 		c.Compression.MinSize = 1024
 	}
+	if c.Admin.Enabled && c.Admin.Addr == "" {
+		c.Admin.Addr = "127.0.0.1:2019"
+	}
 
 	if c.TLS != nil && c.TLS.Enabled {
 		if c.TLS.Port == 0 {
@@ -925,6 +936,19 @@ func (c *Config) validate() error {
 		}
 		if c.Compression.MinSize < 0 {
 			return fmt.Errorf("compression.min_size must be >= 0, got %d", c.Compression.MinSize)
+		}
+	}
+	if c.Admin.Enabled {
+		host, _, err := net.SplitHostPort(c.Admin.Addr)
+		if err != nil {
+			return fmt.Errorf("admin.addr is invalid: %w", err)
+		}
+		if c.Admin.Token == "" {
+			switch host {
+			case "127.0.0.1", "::1", "localhost":
+			default:
+				return fmt.Errorf("admin.token is required when admin.addr is not loopback")
+			}
 		}
 	}
 

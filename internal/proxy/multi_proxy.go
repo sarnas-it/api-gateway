@@ -1259,6 +1259,24 @@ func (mp *MultiProxy) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Status отдаёт безопасную сводку для admin API.
+func (mp *MultiProxy) Status() map[string]any {
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+	targets := make([]string, 0, len(mp.targets))
+	for name := range mp.targets {
+		targets = append(targets, name)
+	}
+	return map[string]any{
+		"targets":      len(mp.targets),
+		"target_names": targets,
+		"routes":       len(mp.routeConfigs),
+		"build_sha":    GitSHA,
+		"build_time":   BuildTime,
+		"build_run_id": BuildRunID,
+	}
+}
+
 // Start запускает HTTP или HTTPS сервер (с автосертификатами Let's Encrypt)
 func (mp *MultiProxy) Start() error {
 	if mp.config.Load().TLS != nil && mp.config.Load().TLS.Enabled {

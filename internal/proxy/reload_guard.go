@@ -60,6 +60,9 @@ func immutableReloadChanges(old, next *config.Config) []string {
 	if !reflect.DeepEqual(old.Discovery, next.Discovery) {
 		changed = append(changed, "discovery")
 	}
+	if !reflect.DeepEqual(old.Admin, next.Admin) {
+		changed = append(changed, "admin")
+	}
 
 	return changed
 }
