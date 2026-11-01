@@ -87,3 +87,12 @@ func TestRunCheck_MissingEnvFails(t *testing.T) {
 		t.Fatalf("stderr = %q, want missing variable name", errOut.String())
 	}
 }
+
+func TestRunCheck_UnknownPlugin(t *testing.T) {
+	cfg := validConfig + "plugins:\n  no.such.module:\n    a: b\n"
+	var out, errOut strings.Builder
+	code := runCheck(writeTemp(t, cfg), false, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "no.such.module") {
+		t.Fatalf("code=%d stderr=%q", code, errOut.String())
+	}
+}

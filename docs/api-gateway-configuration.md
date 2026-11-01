@@ -101,6 +101,22 @@ Gzip-сжатие ответов. Выключено по умолчанию; в
 
 Сжатие не применяется к `HEAD`, `101 Upgrade` (WebSocket), `text/event-stream`, уже сжатым ответам (`Content-Encoding` задан) и ответам без сжимаемого `Content-Type`. Заголовок `Vary: Accept-Encoding` добавляется автоматически.
 
+## plugins
+
+Конфигурация compile-time xgate-модулей: имя модуля → параметры.
+
+| Поле | Тип | По умолчанию | Смысл | Пример |
+|---|---|---|---|---|
+| `<module>` | map[string]string | `{}` | Параметры модуля; читаются его `Configure` | `example: {header: "X-Tenant"}` |
+
+Неизвестное имя модуля или модуль без `Configure` — ошибка запуска. Секции применяются один раз до старта листенеров; SIGHUP их не перечитывает — после правки `plugins:` нужен рестарт процесса.
+
+```yaml
+plugins:
+  example:
+    header: "X-Tenant"
+```
+
 ## http3
 
 HTTP/3 (QUIC) на том же TLS-конфиге. Требует `tls.enabled: true`.

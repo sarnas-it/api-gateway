@@ -64,6 +64,10 @@ func Main() {
 		}
 		log.Info("Compiled modules", zap.Strings("modules", names))
 	}
+	if err := plugin.Configure(cfg.Plugins); err != nil {
+		log.Error("Failed to configure plugins", zap.Error(err))
+		os.Exit(1)
+	}
 	defer func(log *zap.Logger) {
 		err := log.Sync()
 		if err != nil {
@@ -78,6 +82,16 @@ func Main() {
 	if err != nil {
 		log.Error("Failed to create proxy", zap.Error(err))
 		os.Exit(1)
+	}
+	if mws := plugin.HTTPMiddlewares(); len(mws) > 0 {
+		p.SetMiddleware(func(next http.Handler) http.Handler {
+			// Регистрация в init() — первая снаружи, последняя ближе к прокси.
+			for i := len(mws) - 1; i >= 0; i-- {
+				next = mws[i].Wrap(next)
+			}
+			return next
+		})
+		log.Info("Applied HTTP middleware modules", zap.Int("count", len(mws)))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

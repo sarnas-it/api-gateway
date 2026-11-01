@@ -33,6 +33,8 @@ type Config struct {
 	Compression CompressionConfig `yaml:"compression"`
 	Admin       AdminConfig       `yaml:"admin"`
 	HTTP3       HTTP3Config       `yaml:"http3"`
+	// Plugins — конфигурация compile-time модулей: имя модуля → параметры.
+	Plugins map[string]map[string]string `yaml:"plugins"`
 }
 
 // HTTP3Config — HTTP/3 (QUIC) поверх того же TLS-конфига.
