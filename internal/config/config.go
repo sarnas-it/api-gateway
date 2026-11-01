@@ -4,9 +4,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -372,6 +374,20 @@ type RoutingRule struct {
 	// Retries — число повторов при транспортной ошибке для идемпотентных
 	// методов без тела (GET/HEAD/OPTIONS/TRACE). 0 — без повторов.
 	Retries int `yaml:"retries"`
+
+	// PathRegex — RE2-регулярное выражение по r.URL.Path. Взаимоисключающе с
+	// path_prefix: либо префикс, либо регулярка. Паттерн не анкорится —
+	// якори задаются в самом выражении (^...$).
+	PathRegex string `yaml:"path_regex,omitempty"`
+	// Headers — все перечисленные заголовки должны совпасть с точным
+	// значением. Пустое значение — заголовок должен присутствовать.
+	Headers map[string]string `yaml:"headers,omitempty"`
+	// Query — все перечисленные параметры должны совпасть с точным
+	// значением. Пустое значение — параметр должен присутствовать.
+	Query map[string]string `yaml:"query,omitempty"`
+
+	// pathRe — скомпилированный PathRegex; заполняется при Load/Validate.
+	pathRe *regexp.Regexp
 }
 
 // BufferRequestBodyEnabled — эффективное значение buffer_request_body.
@@ -1053,8 +1069,18 @@ func (c *Config) validate() error {
 
 	// Проверяем правила маршрутизации
 	poolPolicy := make(map[string]RoutingRule)
-	for _, rule := range c.Routing.Rules {
-		if rule.PathPrefix == "" {
+	for i := range c.Routing.Rules {
+		rule := &c.Routing.Rules[i]
+		if rule.PathRegex != "" {
+			if rule.PathPrefix != "" {
+				return fmt.Errorf("routing rule path_prefix and path_regex are mutually exclusive")
+			}
+			re, err := regexp.Compile(rule.PathRegex)
+			if err != nil {
+				return fmt.Errorf("routing rule path_regex %q: %w", rule.PathRegex, err)
+			}
+			rule.pathRe = re
+		} else if rule.PathPrefix == "" {
 			return fmt.Errorf("routing rule path_prefix is required")
 		}
 		if !targetNames[rule.TargetName] {
@@ -1071,7 +1097,7 @@ func (c *Config) validate() error {
 		// Правила, совпадающие по (host, path_prefix, methods), делят один пул
 		// балансировки. Политика пула (auth, strip_path, rate_limit) должна
 		// совпадать, иначе поведение запроса зависело бы от выбранного таргета.
-		key := RuleRouteKey(rule)
+		key := RuleRouteKey(*rule)
 		if first, ok := poolPolicy[key]; ok {
 			if first.StripPath != rule.StripPath ||
 				!reflect.DeepEqual(first.Auth, rule.Auth) ||
@@ -1081,7 +1107,7 @@ func (c *Config) validate() error {
 			}
 			continue
 		}
-		poolPolicy[key] = rule
+		poolPolicy[key] = *rule
 	}
 
 	// Проверяем формат логирования. Пустое значение допустимо для
@@ -1293,22 +1319,47 @@ func (c *Config) GetTargetByName(name string) *TargetConfig {
 	return nil
 }
 
-// FindTargetForPath находит таргет для пути на основе правил маршрутизации
+// FindTargetForPath находит таргет по пути. Правила с headers/query при
+// таком вызове не совпадают: без запроса их проверить нельзя. Для реального
+// трафика используйте FindTargetForRequest.
 func (c *Config) FindTargetForPath(path string, method string, host ...string) (*TargetConfig, *RoutingRule) {
-	var bestMatch *RoutingRule
-	var bestMatchLen int
-
 	reqHost := ""
 	if len(host) > 0 {
-		// Порт в Host не участвует в правилах: воркеры ходят на
-		// https://tracker.sarnas.ru:8444 и присылают Host с портом, а
-		// правила заданы именами хостов.
-		reqHost = normalizeRequestHost(host[0])
+		reqHost = host[0]
 	}
+	return c.findTarget(path, method, reqHost, nil, nil)
+}
+
+// FindTargetForRequest находит таргет с учётом всех матчеров правила:
+// host, methods, headers, query и path_prefix/path_regex.
+func (c *Config) FindTargetForRequest(r *http.Request) (*TargetConfig, *RoutingRule) {
+	var (
+		queryOnce bool
+		query     url.Values
+	)
+	return c.findTarget(r.URL.Path, r.Method, r.Host, r.Header, func() url.Values {
+		if !queryOnce {
+			query = r.URL.Query()
+			queryOnce = true
+		}
+		return query
+	})
+}
+
+// findTarget — общий матчер. queryFunc вызывается только если в правилах
+// действительно есть query-матчеры (парсинг query на каждом запросе не нужен).
+func (c *Config) findTarget(path, method, host string, header http.Header, queryFunc func() url.Values) (*TargetConfig, *RoutingRule) {
+	var bestMatch *RoutingRule
+	bestScore := -1
+
+	// Порт в Host не участвует в правилах: воркеры ходят на
+	// https://tracker.sarnas.ru:8444 и присылают Host с портом, а
+	// правила заданы именами хостов.
+	reqHost := normalizeRequestHost(host)
 
 	for i := range c.Routing.Rules {
 		rule := &c.Routing.Rules[i]
-		// Проверяем Host, если указан
+
 		if rule.Host != "" {
 			if reqHost == "" {
 				continue
@@ -1324,7 +1375,6 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 			}
 		}
 
-		// Проверяем метод, если указан
 		if len(rule.Methods) > 0 {
 			methodAllowed := false
 			for _, m := range rule.Methods {
@@ -1338,14 +1388,32 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 			}
 		}
 
-		// Ищем самый длинный совпадающий префикс
-		if strings.HasPrefix(path, rule.PathPrefix) {
-			// При равной длине префикса правило с host конкретнее правила без host.
-			l := len(rule.PathPrefix)
-			if bestMatch == nil || l > bestMatchLen || (l == bestMatchLen && bestMatch.Host == "" && rule.Host != "") {
-				bestMatch = rule
-				bestMatchLen = l
+		if !headerMatches(rule.Headers, header) {
+			continue
+		}
+		if len(rule.Query) > 0 && !queryMatches(rule.Query, queryFunc) {
+			continue
+		}
+
+		if rule.PathRegex != "" {
+			re := rule.pathRe
+			if re == nil {
+				// Конфиг не проходил Validate (например, собран в тесте):
+				// компилируем на месте один раз, без записи в правило.
+				if re, _ = regexp.Compile(rule.PathRegex); re == nil {
+					continue
+				}
 			}
+			if !re.MatchString(path) {
+				continue
+			}
+		} else if !strings.HasPrefix(path, rule.PathPrefix) {
+			continue
+		}
+
+		if score := rule.matchScore(); bestMatch == nil || score > bestScore {
+			bestMatch = rule
+			bestScore = score
 		}
 	}
 
@@ -1354,4 +1422,67 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 	}
 
 	return nil, nil
+}
+
+// matchScore — приоритет правила: host, затем число header/query-матчеров,
+// затем regex, затем длина path_prefix. Без новых матчеров поведение
+// прежнее: длинный префикс > короткий, host > без host при равном префиксе.
+func (r *RoutingRule) matchScore() int {
+	prefix := len(r.PathPrefix)
+	if prefix > 1<<14-1 {
+		prefix = 1<<14 - 1
+	}
+	score := prefix
+	if r.PathRegex != "" {
+		score += 1 << 15
+	}
+	score += (len(r.Headers) + len(r.Query)) << 16
+	if r.Host != "" {
+		score += 1 << 24
+	}
+	return score
+}
+
+// headerMatches проверяет все header-матчеры. Пустое ожидаемое значение —
+// «заголовок присутствует» (любое значение). Отсутствие header-матчеров
+// совпадает всегда, в том числе когда запрос без заголовков.
+func headerMatches(want map[string]string, header http.Header) bool {
+	if len(want) == 0 {
+		return true
+	}
+	if header == nil {
+		return false
+	}
+	for name, value := range want {
+		vals, ok := header[http.CanonicalHeaderKey(name)]
+		if !ok || len(vals) == 0 {
+			return false
+		}
+		if value != "" && vals[0] != value {
+			return false
+		}
+	}
+	return true
+}
+
+// queryMatches проверяет все query-матчеры. Пустое ожидаемое значение —
+// «параметр присутствует».
+func queryMatches(want map[string]string, queryFunc func() url.Values) bool {
+	if len(want) == 0 {
+		return true
+	}
+	if queryFunc == nil {
+		return false
+	}
+	q := queryFunc()
+	for name, value := range want {
+		vals, ok := q[name]
+		if !ok || len(vals) == 0 {
+			return false
+		}
+		if value != "" && vals[0] != value {
+			return false
+		}
+	}
+	return true
 }

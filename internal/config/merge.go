@@ -72,7 +72,29 @@ func Merge(base *Config, targets []TargetConfig, rules []RoutingRule) *Config {
 // host, path_prefix и множество методов (без учёта порядка и регистра).
 // Правила с одинаковым ключом образуют один пул балансировки.
 func RuleRouteKey(r RoutingRule) string {
-	return r.Host + "\x00" + r.PathPrefix + "\x00" + methodsKey(r.Methods)
+	return r.Host + "\x00" + r.PathPrefix + "\x00" + r.PathRegex + "\x00" +
+		methodsKey(r.Methods) + "\x00" + matchersKey(r.Headers) + "\x00" + matchersKey(r.Query)
+}
+
+// matchersKey сериализует map-матчеры детерминированно: имена заголовков
+// сравниваются без регистра, поэтому и в ключе они в нижнем регистре.
+func matchersKey(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(strings.ToLower(k))
+		b.WriteString("=")
+		b.WriteString(m[k])
+		b.WriteString("\x00")
+	}
+	return b.String()
 }
 
 // ruleKey идентифицирует правило для дедупликации: route + имя таргета.

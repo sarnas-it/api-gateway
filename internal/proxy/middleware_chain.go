@@ -258,7 +258,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		startTime := time.Now()
 		reqID, traceID := requestIDsFromContext(r.Context())
 
-		target, rule := mp.config.Load().FindTargetForPath(r.URL.Path, r.Method, r.Host)
+		target, rule := mp.config.Load().FindTargetForRequest(r)
 
 		rw := newResponseWriter(w)
 		// Захват тела ответа нужен только когда хотя бы один on_response вебхук
