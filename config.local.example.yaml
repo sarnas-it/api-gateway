@@ -91,6 +91,13 @@ targets:
     strip_prefix: false
 
 routing:
+  # Матчеры правила складываются по И: host, methods, headers, query и один из
+  # path_prefix/path_regex. Пример:
+  #   - path_regex: "^/api/v[0-9]+/"
+  #     target_name: "api-v2"
+  #   - path_prefix: "/api"
+  #     target_name: "api-v1"
+  #     headers: {X-Api-Version: "1"}
   # lb_policy: round_robin | random | least_conn | ip_hash | sticky
   # sticky привязывает клиента к таргету cookie xg_target (сессионные бэкенды).
   rules:

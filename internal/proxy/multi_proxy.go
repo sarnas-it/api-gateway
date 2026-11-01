@@ -1554,7 +1554,7 @@ func (mp *MultiProxy) serveStatic(w http.ResponseWriter, r *http.Request) bool {
 
 	// Если есть routing rule с Host для этого запроса — пропускаем статику,
 	// чтобы host-based роутинг работал (например chatcom.sarnas.ru → chatcom backend)
-	_, rule := mp.config.Load().FindTargetForPath(r.URL.Path, r.Method, r.Host)
+	_, rule := mp.config.Load().FindTargetForRequest(r)
 	if rule != nil && rule.Host != "" {
 		return false
 	}
