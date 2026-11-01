@@ -83,6 +83,7 @@ HTTP-сервер.
 | `idle_timeout` | duration | `120s` | Таймаут keep-alive соединения | `120s` |
 | `max_request_body_size` | int64 (байты) | `10485760` (10 MiB), если ключ не задан | Лимит тела запроса. `0` — **без лимита**, `>0` — лимит в байтах | `1048576` |
 | `trusted_proxies` | []string | `[]` | IP/CIDR прокси, которым доверяем `X-Forwarded-For`; пусто — XFF игнорируется | `["173.245.48.0/20", "10.0.0.0/8"]` |
+| `h2c` | bool | `false` | Cleartext HTTP/2 на обычном HTTP-листенере (для gRPC-клиентов без TLS) | `true` |
 
 **`trusted_proxies` и клиентский IP.** Если список пуст, клиентский IP берётся из `RemoteAddr`, а `X-Forwarded-For` игнорируется — иначе любой клиент подделает IP и обойдёт rate limit или allowlist `/metrics`. Если запрос пришёл от доверенного прокси, цепочка XFF читается справа налево до первого недоверенного адреса. За Cloudflare перечислите его диапазоны, иначе все клиенты будут выглядеть как один IP.
 
@@ -199,6 +200,9 @@ static:
 | `tls.server_name` | string | `""` | SNI/имя для проверки сертификата | `internal.example` |
 | `tls.insecure_skip_verify` | bool | `false` | Не проверять сертификат; взаимоисключающе с `ca_file` | `false` |
 | `tls.cert_file` / `tls.key_file` | string | `""` | Клиентский сертификат для mTLS к бэкенду; задаются парой | `/etc/api-gateway/client.pem` |
+| `protocol` | string | `""` | Протокол к бэкенду: пусто (HTTP/1.1) или `h2c` (cleartext HTTP/2, в т.ч. gRPC) | `h2c` |
+
+**h2c и gRPC.** Для gRPC клиентский листенер включает `server.h2c: true`; таргет получает `protocol: h2c` и `http://` URL. Прокси передаёт HTTP/2-поток, trailers и стриминг; TLS к gRPC-бэкенду пока не поддерживается (h2c только cleartext).
 
 **Семантика `weight`.** Таргеты, чьи правила совпадают по `(host, path_prefix, methods)`, образуют один пул и распределяются взвешенным round-robin по здоровым кандидатам. Отсутствие ключа `weight` — это вес 1, а явный `weight: 0` (или отрицательный) **исключает** таргет из выбора. Различайте эти два случая.
 

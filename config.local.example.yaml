@@ -3,6 +3,7 @@
 
 server:
   port: 8080
+  # h2c: true   # cleartext HTTP/2 для gRPC-клиентов
 
 # Gzip-сжатие ответов (выключено по умолчанию).
 # compression:
