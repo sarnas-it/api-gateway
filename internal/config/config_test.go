@@ -355,6 +355,27 @@ tls:
 	}
 }
 
+func TestTLS_WildcardDomainRejected(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains:
+    - "*.example.com"
+  email: "admin@example.com"
+`
+	path := writeTempConfig(t, yaml)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for wildcard TLS domain")
+	}
+	if !strings.Contains(err.Error(), "wildcard") {
+		t.Fatalf("error must explain wildcard limitation, got: %v", err)
+	}
+}
+
 func TestTLS_NoEmail(t *testing.T) {
 	yaml := `
 targets:

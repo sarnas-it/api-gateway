@@ -814,6 +814,11 @@ func (c *Config) validate() error {
 		if len(c.TLS.Domains) == 0 {
 			return fmt.Errorf("at least one domain is required when TLS is enabled")
 		}
+		for _, domain := range c.TLS.Domains {
+			if strings.Contains(domain, "*") {
+				return fmt.Errorf("tls.domains: wildcard domain %q is not supported: autocert validates only HTTP-01/TLS-ALPN-01; list explicit hostnames or use certmagic with DNS-01", domain)
+			}
+		}
 		if c.TLS.Email == "" {
 			return fmt.Errorf("email is required for Let's Encrypt registration")
 		}

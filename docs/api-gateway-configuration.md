@@ -92,7 +92,7 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `enabled` | bool | `false` | Включает HTTPS-сервер | `true` |
 | `port` | int | `443` | HTTPS-порт | `443` |
 | `http_port` | int | `80` | HTTP-порт для ACME-challenge и редиректа | `80` |
-| `domains` | []string | — | Домены сертификата; обязательны при `enabled: true`. Поддерживаются wildcard | `["api.example.com"]` |
+| `domains` | []string | — | Домены сертификата; обязательны при `enabled: true`. Только явные хосты: wildcard не поддерживается (ACME HTTP-01/TLS-ALPN-01) | `["api.example.com"]` |
 | `email` | string | — | Email для регистрации в Let's Encrypt; обязателен | `admin@example.com` |
 | `cache_dir` | string | `/var/lib/api-gateway/certs` | Каталог кеша сертификатов; при `staging` используется подкаталог `staging` | `/var/lib/api-gateway/certs` |
 | `staging` | bool | `false` | `true` — ACME staging CA (для отладки), `false` — production Let's Encrypt | `false` |
@@ -102,6 +102,8 @@ HTTPS с автоматическими сертификатами Let's Encrypt
 | `worker_client_ca_file` | string | — | PEM-файл CA (один или несколько сертификатов) для проверки клиентских сертификатов; обязателен при `worker_port > 0` | `/etc/api-gateway/worker-ca.pem` |
 
 При включённом TLS запускаются два сервера: HTTPS на `port` и HTTP на `http_port` для ACME-challenge и редиректа. `staging: true` использует реальный staging CA и отдельный подкаталог кеша, чтобы staging-сертификаты не смешивались с production.
+
+Wildcard-домены (`*.example.com`) не поддерживаются: `autocert` подтверждает владение доменом через HTTP-01 или TLS-ALPN-01, а для wildcard нужен DNS-01. Конфиг с wildcard отклоняется при валидации — перечислите явные хосты. Если поддомены нужны динамически, используйте `certmagic` с DNS-01.
 
 Если задан `worker_port`, поднимается третий листенер — HTTPS с
 `ClientAuth: RequireAndVerifyClientCert` и проверкой клиентского сертификата по
