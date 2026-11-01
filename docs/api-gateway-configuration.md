@@ -100,6 +100,18 @@ Gzip-сжатие ответов. Выключено по умолчанию; в
 
 Сжатие не применяется к `HEAD`, `101 Upgrade` (WebSocket), `text/event-stream`, уже сжатым ответам (`Content-Encoding` задан) и ответам без сжимаемого `Content-Type`. Заголовок `Vary: Accept-Encoding` добавляется автоматически.
 
+## admin
+
+Loopback admin API для статуса и атомарного reload.
+
+| Поле | Тип | По умолчанию | Смысл и значения | Пример |
+|---|---|---|---|---|
+| `enabled` | bool | `false` | Включает admin-листенер | `true` |
+| `addr` | string | `127.0.0.1:2019` | Адрес; не-loopback требует токен | `127.0.0.1:2019` |
+| `token` | string | `""` | Bearer-токен; лучше `${ADMIN_TOKEN}` | `"${ADMIN_TOKEN}"` |
+
+Эндпоинты: `GET /health`, `GET /status` (цели, маршруты, build), `GET /config` (путь, размер, sha256 — без секретов), `POST /reload` (перечитать файл и атомарно применить). Ошибка reload возвращает 400, старый конфиг остаётся. Изменения immutable-полей отклоняются с `requires restart`.
+
 ## tls
 
 HTTPS с автоматическими сертификатами Let's Encrypt (ACME).
