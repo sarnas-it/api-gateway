@@ -11,6 +11,11 @@ server:
 #   level: 5
 #   min_size: 1024
 
+# HTTP/3 (QUIC) поверх TLS; нужен UDP-порт и rmem_max.
+# http3:
+#   enabled: true
+#   port: 443
+
 # Loopback admin API (status/reload); token — из env.
 # admin:
 #   enabled: true

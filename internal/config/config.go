@@ -32,6 +32,14 @@ type Config struct {
 	Discovery   *DiscoveryConfig  `yaml:"discovery,omitempty"`
 	Compression CompressionConfig `yaml:"compression"`
 	Admin       AdminConfig       `yaml:"admin"`
+	HTTP3       HTTP3Config       `yaml:"http3"`
+}
+
+// HTTP3Config — HTTP/3 (QUIC) поверх того же TLS-конфига.
+type HTTP3Config struct {
+	Enabled bool `yaml:"enabled"`
+	// Port — UDP-порт; 0 → tls.port.
+	Port int `yaml:"port"`
 }
 
 // AdminConfig — loopback admin API (status/reload).
@@ -786,6 +794,13 @@ func (c *Config) setDefaults() {
 	if c.Admin.Enabled && c.Admin.Addr == "" {
 		c.Admin.Addr = "127.0.0.1:2019"
 	}
+	if c.HTTP3.Enabled && c.HTTP3.Port == 0 {
+		if c.TLS != nil && c.TLS.Port > 0 {
+			c.HTTP3.Port = c.TLS.Port
+		} else {
+			c.HTTP3.Port = 443
+		}
+	}
 
 	if c.TLS != nil && c.TLS.Enabled {
 		if c.TLS.Port == 0 {
@@ -961,6 +976,14 @@ func (c *Config) validate() error {
 			default:
 				return fmt.Errorf("admin.token is required when admin.addr is not loopback")
 			}
+		}
+	}
+	if c.HTTP3.Enabled {
+		if c.TLS == nil || !c.TLS.Enabled {
+			return fmt.Errorf("http3 requires tls.enabled: true")
+		}
+		if c.HTTP3.Port < 1 || c.HTTP3.Port > 65535 {
+			return fmt.Errorf("http3.port must be between 1 and 65535, got %d", c.HTTP3.Port)
 		}
 	}
 
