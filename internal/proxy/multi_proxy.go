@@ -202,6 +202,8 @@ type MultiProxy struct {
 	publisher          *Publisher
 	trustedProxies     []*net.IPNet
 	certmagicStop      func()
+	// middleware оборачивает публичный обработчик; задаётся до Start.
+	middleware func(http.Handler) http.Handler
 }
 
 // HealthChecker проверяет здоровье таргета
@@ -1389,6 +1391,20 @@ func (mp *MultiProxy) httpHandler() http.Handler {
 	return mp
 }
 
+// SetMiddleware оборачивает публичный обработчик (HTTP и HTTPS/HTTP3).
+// Вызывать до Start: после старта серверы держат уже собранную цепочку.
+func (mp *MultiProxy) SetMiddleware(wrap func(http.Handler) http.Handler) {
+	mp.middleware = wrap
+}
+
+// wrapMiddleware применяет цепочку compile-time модулей, если она задана.
+func (mp *MultiProxy) wrapMiddleware(h http.Handler) http.Handler {
+	if mp.middleware == nil {
+		return h
+	}
+	return mp.middleware(h)
+}
+
 func (mp *MultiProxy) Start() error {
 	if mp.config.Load().TLS != nil && mp.config.Load().TLS.Enabled {
 		return mp.startTLS()
@@ -1396,7 +1412,7 @@ func (mp *MultiProxy) Start() error {
 
 	addr := fmt.Sprintf(":%d", mp.config.Load().Server.Port)
 
-	handler := mp.httpHandler()
+	handler := mp.wrapMiddleware(mp.httpHandler())
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      handler,

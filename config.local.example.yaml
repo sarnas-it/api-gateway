@@ -22,6 +22,11 @@ server:
 #   addr: "127.0.0.1:2019"
 #   token: "$${ADMIN_TOKEN}"
 
+# Параметры compile-time xgate-модулей.
+# plugins:
+#   example:
+#     header: "X-Tenant"
+
 application:
   env: "dev"
   health_check: false

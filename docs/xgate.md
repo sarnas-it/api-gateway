@@ -86,16 +86,33 @@ package mymodule
 
 import "code.sarnas.ru/api-gateway/pkg/plugin"
 
-type module struct{}
+type module struct{ header string }
 
-func (module) Name() string { return "my.module" }
+func (*module) Name() string { return "my.module" }
 
-func init() { plugin.Register(module{}) }
+func (m *module) Configure(cfg map[string]string) error {
+	m.header = cfg["header"]
+	return nil
+}
+
+func init() { plugin.Register(&module{}) }
+```
+
+```yaml
+plugins:
+  my.module:
+    header: "X-Tenant"
 ```
 
 Дальше модуль реализует нужный интерфейс xgate (DNS-провайдер, auth-коннектор,
 discovery, HTTP-middleware). Интерфейсы живут в `pkg/plugin`; ядро
 проксирования, JWT, RBAC, rate limit и аудит остаются встроенными.
+
+Модули с `Wrap(http.Handler) http.Handler` применяются к публичному обработчику
+при старте: цепочка оборачивает HTTP-, HTTPS- и HTTP/3-листенеры. Модуль,
+зарегистрированный первым, оказывается снаружи. Секции `plugins:` читаются один
+раз перед применением цепочки, поэтому порядок такой: `Configure` → `Wrap` →
+листенеры.
 
 ## Совместимость с Caddy
 

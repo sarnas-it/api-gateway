@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"code.sarnas.ru/api-gateway/internal/config"
+	"code.sarnas.ru/api-gateway/pkg/plugin"
 )
 
 // runCheck загружает и валидирует конфиг, печатает предупреждения и ошибки.
@@ -19,6 +20,10 @@ func runCheck(path string, strict bool, stdout, stderr io.Writer) int {
 
 	for _, w := range warnings {
 		fmt.Fprintf(stderr, "warning: unknown config key: %s\n", w)
+	}
+	if err := plugin.ValidateConfig(cfg.Plugins); err != nil {
+		fmt.Fprintf(stderr, "config invalid: %v\n", err)
+		return 1
 	}
 	if strict && len(warnings) > 0 {
 		fmt.Fprintf(stderr, "config invalid: %d warning(s) treated as errors (-strict)\n", len(warnings))

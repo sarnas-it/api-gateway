@@ -380,6 +380,25 @@ routing:
 	}
 }
 
+func TestPluginsConfig(t *testing.T) {
+	yaml := `
+targets:
+  - name: api
+    url: http://api:9001
+plugins:
+  example:
+    header: "X-Tenant"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Plugins["example"]["header"] != "X-Tenant" {
+		t.Fatalf("plugins = %v", cfg.Plugins)
+	}
+}
+
 func TestAdmin_DefaultsAndValidation(t *testing.T) {
 	base := `
 targets:

@@ -202,7 +202,7 @@ func (mp *MultiProxy) startTLS() error {
 		workerClientCAs = pool
 	}
 
-	publicHandler := http.Handler(mp)
+	publicHandler := mp.wrapMiddleware(http.Handler(mp))
 	if tlsCfg.WorkerPort > 0 {
 		publicHandler = publicWorkerMutedHandler(publicHandler)
 	}
