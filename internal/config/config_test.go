@@ -459,6 +459,46 @@ tls:
 	}
 }
 
+func TestTLS_WildcardWithCertFilesAccepted(t *testing.T) {
+	yaml := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains: ["*.example.com"]
+  email: "admin@example.com"
+  wildcard_cert_file: "/etc/letsencrypt/live/example.com/fullchain.pem"
+  wildcard_key_file: "/etc/letsencrypt/live/example.com/privkey.pem"
+`
+	path := writeTempConfig(t, yaml)
+	if _, _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTLS_WildcardCertFilesMustBePair(t *testing.T) {
+	base := `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+tls:
+  enabled: true
+  domains: ["*.example.com"]
+  email: "admin@example.com"
+%s
+`
+	for _, extra := range []string{
+		"  wildcard_cert_file: \"/tmp/cert.pem\"",
+		"  wildcard_key_file: \"/tmp/key.pem\"",
+	} {
+		path := writeTempConfig(t, fmt.Sprintf(base, extra))
+		if _, _, err := Load(path); err == nil {
+			t.Fatalf("expected error for %q without the pair", extra)
+		}
+	}
+}
+
 func TestTLS_DNSProviderValidation(t *testing.T) {
 	base := `
 targets:
