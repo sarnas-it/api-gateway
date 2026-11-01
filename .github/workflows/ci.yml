@@ -74,11 +74,17 @@ jobs:
       - name: Build standard gateway
         run: /tmp/xgate build --src . --output /tmp/gateway
 
-      - name: Build with Cloudflare module
-        run: /tmp/xgate build --src . --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare --output /tmp/gateway-cloudflare
+      - name: Build with DNS modules
+        run: |
+          /tmp/xgate build --src . \
+            --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare \
+            --with code.sarnas.ru/api-gateway/plugins/dns/desec \
+            --with code.sarnas.ru/api-gateway/plugins/dns/digitalocean \
+            --with code.sarnas.ru/api-gateway/plugins/dns/route53 \
+            --output /tmp/gateway-dns
 
       - name: Verify binaries
-        run: test -x /tmp/gateway && test -x /tmp/gateway-cloudflare
+        run: test -x /tmp/gateway && test -x /tmp/gateway-dns
 
   build:
     needs: [lint, test]
