@@ -56,6 +56,14 @@ func recoveryMiddleware(logger *zap.Logger) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
+					// http.ErrAbortHandler — штатный способ net/http прервать
+					// ответ (клиент закрыл соединение, сорвался стрим). Это не
+					// сбой сервера: отдаём panic дальше, чтобы сервер закрыл
+					// соединение, и не пишем ERROR — иначе каждый обрыв
+					// мобильного клиента выглядит как авария в логах и алертах.
+					if rec == http.ErrAbortHandler {
+						panic(rec)
+					}
 					logger.Error("Panic recovered",
 						zap.Any("panic", rec),
 						zap.String("method", r.Method),
