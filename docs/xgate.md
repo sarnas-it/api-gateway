@@ -142,6 +142,30 @@ routing:
 
 Готовый пример — `modules/apikey` (статичные API-ключи из `plugins.apikey.keys`).
 
+### Discovery-провайдер
+
+`plugin.DiscoveryProvider` заменяет встроенный Docker-провайдер:
+
+```go
+func (m *module) Watch(ctx context.Context, emit func([]plugin.DiscoveredService)) error {
+	emit([]plugin.DiscoveredService{
+		{Name: "api-1", Address: "10.0.0.5:8080", PathPrefix: "/api"},
+	})
+	<-ctx.Done()
+	return nil
+}
+```
+
+```yaml
+discovery:
+  enabled: true
+  module: "my.discovery"
+```
+
+Из сервисов собираются таргеты и правила (`path_prefix` по умолчанию `/<name>`),
+merge со статикой и аварийный `state_file` работают как у Docker-провайдера.
+Готовый пример — `modules/file` (JSON-файл, опрос по интервалу).
+
 ## Совместимость с Caddy
 
 Caddy-модули **не подключаются напрямую**: они завязаны на `caddy.Context`,

@@ -2052,3 +2052,26 @@ routing:
 		t.Fatalf("auth = %+v", auth)
 	}
 }
+
+func TestLoad_DiscoveryModule(t *testing.T) {
+	yaml := `
+discovery:
+  enabled: true
+  module: "file"
+  default_timeout: 3s
+plugins:
+  file:
+    path: "/etc/gateway/services.json"
+`
+	path := writeTempConfig(t, yaml)
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Discovery == nil || cfg.Discovery.Module != "file" || cfg.Discovery.DefaultTimeout != 3*time.Second {
+		t.Fatalf("discovery = %+v", cfg.Discovery)
+	}
+	if cfg.Plugins["file"]["path"] != "/etc/gateway/services.json" {
+		t.Fatalf("plugins = %v", cfg.Plugins)
+	}
+}

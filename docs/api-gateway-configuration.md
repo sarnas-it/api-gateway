@@ -672,6 +672,7 @@ webhooks:
 |---|---|---|---|---|
 | `enabled` | bool | `false` | Включает discovery | `true` |
 | `provider` | string | `docker` | `docker` или `podman` (один клиент) | `docker` |
+| `module` | string | `""` | Имя compile-time xgate-модуля `plugin.DiscoveryProvider`; если задан, встроенный Docker-провайдер не используется | `file` |
 | `host` | string | `unix:///var/run/docker.sock` | Socket Docker/Podman API | `unix:///var/run/docker.sock` |
 | `api_version` | string | `v1.41` | Версия API; `""` — запросы без версии | `v1.41` |
 | `label_prefix` | string | `gateway` | Префикс labels | `gateway` |
@@ -683,6 +684,8 @@ webhooks:
 | `state_file` | string | `/var/lib/api-gateway/discovery-state.json` | Файл последнего удачного результата (аварийный фолбэк); `""` отключает персист | `/var/lib/api-gateway/discovery-state.json` |
 
 Если `discovery.enabled: true`, статические `targets` и `routing.rules` можно не заполнять. При включённом discovery достаточно даже пустой секции `discovery: { enabled: true }` — остальные поля подставятся.
+
+**Модуль discovery.** `discovery.module: <name>` заменяет Docker-провайдер на скомпилированный модуль; параметры модуля — в `plugins.<name>`. Модуль отдаёт сервисы (`name`, `address`, `path_prefix`, `strip_path`), из них собираются таргеты и правила. Имя модуля проверяется на старте и в `gateway --check`. Смена `discovery.module` требует рестарта: SIGHUP перечитывает только статический конфиг. Готовый модуль — `modules/file` (JSON-файл, см. `docs/modules.md`).
 
 **Аварийный фолбэк.** Последний удачный результат discovery атомарно пишется в `state_file` и применяется при старте, поэтому маршруты переживают рестарт при недоступном Docker/Podman. Каталог `state_file` должен быть writable (смонтируйте volume). Ограничение: первый холодный старт без файла состояния и с недоступным Docker останется без обнаруженных маршрутов.
 

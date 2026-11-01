@@ -17,6 +17,10 @@ modules:
   # - path: code.sarnas.ru/xgate-modules/apikey
   #   replacement: ./modules/apikey
 
+  # Discovery из JSON-файла (discovery.module: file).
+  # - path: code.sarnas.ru/xgate-modules/discovery-file
+  #   replacement: ./modules/file
+
   # Локальный форк модуля:
   # - path: github.com/acme/gateway-module
   #   version: v1.0.0

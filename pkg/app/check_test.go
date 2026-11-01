@@ -115,3 +115,16 @@ routing:
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
 }
+
+func TestRunCheck_UnknownDiscoveryModule(t *testing.T) {
+	cfg := `
+discovery:
+  enabled: true
+  module: "no-such-discovery"
+`
+	var out, errOut bytes.Buffer
+	code := runCheck(writeTemp(t, cfg), false, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "no-such-discovery") {
+		t.Fatalf("code=%d stderr=%q", code, errOut.String())
+	}
+}

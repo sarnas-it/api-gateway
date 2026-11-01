@@ -558,3 +558,33 @@ func TestManager_PersistsResultOnOnResult(t *testing.T) {
 		t.Fatalf("state not persisted: %+v", got)
 	}
 }
+
+func TestManager_ModuleWithoutProviderFailsStart(t *testing.T) {
+	cfg := &config.Config{Discovery: &config.DiscoveryConfig{Enabled: true, Module: "file"}}
+	m, err := NewManager(cfg, zap.NewNop(), func(*config.Config) error { return nil })
+	if err != nil {
+		t.Fatalf("NewManager must not build the docker provider for a module: %v", err)
+	}
+	if err := m.Start(context.Background()); err == nil {
+		t.Fatal("expected error when discovery module is not wired")
+	}
+}
+
+func TestManager_UseProviderAfterStart(t *testing.T) {
+	cfg := &config.Config{Discovery: &config.DiscoveryConfig{Enabled: true, Module: "file"}}
+	m, err := NewManager(cfg, zap.NewNop(), func(*config.Config) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := m.UseProvider(stubProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UseProvider(stubProvider{}); err == nil {
+		t.Fatal("expected error when setting provider after Start")
+	}
+}

@@ -62,8 +62,12 @@ type CompressionConfig struct {
 
 // DiscoveryConfig конфигурация service discovery (Docker/Podman по labels).
 type DiscoveryConfig struct {
-	Enabled           bool          `yaml:"enabled"`
-	Provider          string        `yaml:"provider"`
+	Enabled  bool   `yaml:"enabled"`
+	Provider string `yaml:"provider"`
+	// Module — имя compile-time xgate-модуля plugin.DiscoveryProvider.
+	// Если задан, встроенный Docker-провайдер не создаётся: источником
+	// сервисов становится модуль.
+	Module            string        `yaml:"module"`
 	Host              string        `yaml:"host"`
 	APIVersion        string        `yaml:"api_version"`
 	LabelPrefix       string        `yaml:"label_prefix"`
