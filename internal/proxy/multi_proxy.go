@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -165,6 +166,7 @@ type MultiProxy struct {
 	permissionsManager *permissions.Manager
 	identity           *identity.Manager
 	publisher          *Publisher
+	trustedProxies     []*net.IPNet
 }
 
 // HealthChecker проверяет здоровье таргета
@@ -208,13 +210,19 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 		}
 	}
 
+	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("server.trusted_proxies: %w", err)
+	}
+
 	mp := &MultiProxy{
-		targets:      make(map[string]*TargetProxy),
-		routeByRule:  make(map[*config.RoutingRule]*RouteConfig),
-		jwtValidator: jwtValidator,
-		identity:     identityManager,
-		logger:       logger,
-		metrics:      NewMetrics(cfg.MetricsEnabled),
+		targets:        make(map[string]*TargetProxy),
+		routeByRule:    make(map[*config.RoutingRule]*RouteConfig),
+		jwtValidator:   jwtValidator,
+		identity:       identityManager,
+		logger:         logger,
+		metrics:        NewMetrics(cfg.MetricsEnabled),
+		trustedProxies: trustedProxies,
 	}
 	mp.config.Store(cfg)
 	mp.initGlobalLimiter(cfg)
@@ -236,7 +244,7 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 	handler = spaStaticMiddleware(mp)(handler)
 	handler = globalRateLimitMiddleware(mp.globalLimiter, mp.metrics)(handler)
 	if cfg.MetricsEnabled {
-		handler = metricsEndpointMiddleware(mp.metrics, cfg.MetricsAllowedIPs)(handler)
+		handler = metricsEndpointMiddleware(mp.metrics, cfg.MetricsAllowedIPs, mp.clientIP)(handler)
 		handler = activeRequestMetricsMiddleware(mp.metrics)(handler)
 	}
 	handler = tracingMiddleware(mp.tracerProvider)(handler)
@@ -1091,6 +1099,11 @@ func (tp *TargetProxy) checkHealth(logger *zap.Logger, mp *MultiProxy) {
 // останавливаются старые healthcheck'и. При любой ошибке прежнее состояние
 // (конфиг, таргеты, правила, healthcheck'и) остаётся нетронутым.
 func (mp *MultiProxy) Reload(cfg *config.Config) error {
+	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("server.trusted_proxies: %w", err)
+	}
+
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -1127,6 +1140,7 @@ func (mp *MultiProxy) Reload(cfg *config.Config) error {
 
 	mp.config.Store(cfg)
 	mp.targets = newTargets
+	mp.trustedProxies = trustedProxies
 	mp.rebuildRouteConfigs(cfg)
 	mp.reloadGlobalLimiter(cfg)
 

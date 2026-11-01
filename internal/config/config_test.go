@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -309,6 +310,37 @@ targets:
 	}
 	if cfg.Logging.Level != "info" {
 		t.Errorf("default log level should be info, got %s", cfg.Logging.Level)
+	}
+}
+
+func TestValidate_TrustedProxies(t *testing.T) {
+	base := `
+targets:
+  - name: api
+    url: http://api:9001
+server:
+  trusted_proxies: [%s]
+`
+	for _, tc := range []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"cidr", `"10.0.0.0/8"`, false},
+		{"exact ipv4", `"10.0.0.5"`, false},
+		{"exact ipv6", `"2001:db8::1"`, false},
+		{"garbage", `"not-an-ip"`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfig(t, fmt.Sprintf(base, tc.value))
+			_, _, err := Load(path)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error for invalid trusted proxy")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

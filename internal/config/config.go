@@ -107,6 +107,36 @@ type ServerConfig struct {
 	// nil (ключ не задан) → значение по умолчанию 10 MiB;
 	// 0 → без лимита; >0 → лимит в байтах.
 	MaxRequestBodySize *int64 `yaml:"max_request_body_size"`
+	// TrustedProxies — IP/CIDR прокси, которым доверяем X-Forwarded-For.
+	// Пусто → XFF игнорируется, клиентский IP берётся из RemoteAddr.
+	TrustedProxies []string `yaml:"trusted_proxies"`
+}
+
+// ParseTrustedProxies разбирает список IP/CIDR доверенных прокси. Одиночный
+// адрес превращается в /32 (IPv4) или /128 (IPv6).
+func ParseTrustedProxies(values []string) ([]*net.IPNet, error) {
+	nets := make([]*net.IPNet, 0, len(values))
+	for _, raw := range values {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		if _, n, err := net.ParseCIDR(v); err == nil {
+			nets = append(nets, n)
+			continue
+		}
+		ip := net.ParseIP(v)
+		if ip == nil {
+			return nil, fmt.Errorf("invalid IP or CIDR %q", raw)
+		}
+		bits := net.IPv6len * 8
+		if ip4 := ip.To4(); ip4 != nil {
+			ip = ip4
+			bits = net.IPv4len * 8
+		}
+		nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+	}
+	return nets, nil
 }
 
 // defaultMaxRequestBodySize применяется, когда max_request_body_size не задан.
@@ -757,6 +787,10 @@ func validHTTPMethodToken(m string) bool {
 
 // validate проверяет корректность конфигурации
 func (c *Config) validate() error {
+	if _, err := ParseTrustedProxies(c.Server.TrustedProxies); err != nil {
+		return fmt.Errorf("server.trusted_proxies: %w", err)
+	}
+
 	discoveryEnabled := c.Discovery != nil && c.Discovery.Enabled
 	if discoveryEnabled {
 		switch c.Discovery.Provider {

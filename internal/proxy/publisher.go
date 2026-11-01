@@ -38,36 +38,25 @@ type AuditEvent struct {
 // defaultMaxResponseBodyBytes — потолок захвата тела ответа для публикации.
 const defaultMaxResponseBodyBytes = 64 << 10 // 64 KiB
 
-// clientIPFromRequest возвращает клиентский IP: первый валидный адрес из
-// X-Forwarded-For, иначе хост из RemoteAddr.
-func clientIPFromRequest(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		for _, part := range strings.Split(xff, ",") {
-			if ip := net.ParseIP(strings.TrimSpace(part)); ip != nil {
-				return ip.String()
-			}
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
 type Publisher struct {
-	nc       *nats.Conn
-	webhooks []config.WebhookConfig
-	log      *zap.Logger
-	client   *http.Client
-	batchers map[string]*webhookBatcher
+	nc             *nats.Conn
+	webhooks       []config.WebhookConfig
+	log            *zap.Logger
+	client         *http.Client
+	batchers       map[string]*webhookBatcher
+	trustedProxies []*net.IPNet
 }
 
 func NewPublisher(cfg *config.Config, log *zap.Logger) (*Publisher, error) {
+	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("server.trusted_proxies: %w", err)
+	}
 	p := &Publisher{
-		log:      log,
-		webhooks: cfg.Webhooks,
-		batchers: make(map[string]*webhookBatcher),
+		log:            log,
+		webhooks:       cfg.Webhooks,
+		batchers:       make(map[string]*webhookBatcher),
+		trustedProxies: trustedProxies,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
@@ -180,7 +169,7 @@ func (p *Publisher) buildEvent(r *http.Request, statusCode int, wh config.Webhoo
 		Timestamp:  time.Now(),
 		StatusCode: statusCode,
 		Headers:    make(map[string]string),
-		IP:         clientIPFromRequest(r),
+		IP:         getClientIP(r, p.trustedProxies),
 		UserAgent:  r.UserAgent(),
 	}
 
