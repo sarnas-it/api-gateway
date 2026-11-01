@@ -89,6 +89,12 @@ type TLSConfig struct {
 	DNSPassword string `yaml:"dns_password"`
 	// DNSPropagationTimeout — сколько ждать появления TXT-записи; 0 → 2 минуты.
 	DNSPropagationTimeout time.Duration `yaml:"dns_propagation_timeout"`
+
+	// WildcardCertFile/WildcardKeyFile — готовый сертификат для wildcard-доменов
+	// (например, выпущенный certbot/acme.sh вручную). Взаимоисключающая
+	// альтернатива DNS-01: файлы читаются при старте, ACME не вызывается.
+	WildcardCertFile string `yaml:"wildcard_cert_file"`
+	WildcardKeyFile  string `yaml:"wildcard_key_file"`
 }
 
 // StaticApp конфигурация SPA фронтенда
@@ -910,8 +916,15 @@ func (c *Config) validate() error {
 			}
 			hasWildcard = true
 		}
-		if hasWildcard && c.TLS.DNSProvider == "" {
-			return fmt.Errorf("tls.domains: wildcard requires tls.dns_provider (DNS-01); autocert supports only HTTP-01/TLS-ALPN-01")
+		hasWildcardFiles := c.TLS.WildcardCertFile != "" || c.TLS.WildcardKeyFile != ""
+		if (c.TLS.WildcardCertFile == "") != (c.TLS.WildcardKeyFile == "") {
+			return fmt.Errorf("tls.wildcard_cert_file and tls.wildcard_key_file must be set together")
+		}
+		if hasWildcardFiles && !hasWildcard {
+			return fmt.Errorf("tls.wildcard_cert_file requires at least one wildcard domain in tls.domains")
+		}
+		if hasWildcard && c.TLS.DNSProvider == "" && !hasWildcardFiles {
+			return fmt.Errorf("tls.domains: wildcard requires tls.dns_provider (DNS-01) or tls.wildcard_cert_file/tls.wildcard_key_file")
 		}
 		if c.TLS.DNSProvider != "" {
 			if c.TLS.DNSProvider != "regru" {

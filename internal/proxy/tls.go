@@ -147,16 +147,33 @@ func (mp *MultiProxy) startTLS() error {
 	certManager := buildCertManager(tlsCfg)
 	autoTLS := certManager.TLSConfig()
 
-	wildcardMagic, stopWildcard, wildcardPatterns, err := buildWildcardCertmagic(tlsCfg, mp.logger)
-	if err != nil {
-		return fmt.Errorf("wildcard certificates: %w", err)
-	}
-	if stopWildcard != nil {
-		mp.certmagicStop = stopWildcard
-	}
-	var wildcardTLS *tls.Config
-	if wildcardMagic != nil {
-		wildcardTLS = wildcardMagic.TLSConfig()
+	var (
+		wildcardTLS      *tls.Config
+		wildcardPatterns []string
+		err              error
+	)
+	if tlsCfg.WildcardCertFile != "" {
+		wildcardTLS, err = loadWildcardTLS(tlsCfg)
+		if err != nil {
+			return fmt.Errorf("wildcard certificate files: %w", err)
+		}
+		wildcardPatterns = wildcardDomains(tlsCfg.Domains)
+		mp.logger.Info("Loaded wildcard certificate from files",
+			zap.String("cert_file", tlsCfg.WildcardCertFile),
+			zap.Strings("wildcard_domains", wildcardPatterns),
+		)
+	} else {
+		wildcardMagic, stopWildcard, patterns, err := buildWildcardCertmagic(tlsCfg, mp.logger)
+		if err != nil {
+			return fmt.Errorf("wildcard certificates: %w", err)
+		}
+		if stopWildcard != nil {
+			mp.certmagicStop = stopWildcard
+		}
+		wildcardPatterns = patterns
+		if wildcardMagic != nil {
+			wildcardTLS = wildcardMagic.TLSConfig()
+		}
 	}
 	serverTLS := combineTLSConfig(autoTLS, wildcardTLS, wildcardPatterns)
 

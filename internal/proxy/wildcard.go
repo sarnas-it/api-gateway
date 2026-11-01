@@ -164,6 +164,21 @@ func buildWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*cert
 	return magic, stop, wildcards, nil
 }
 
+// loadWildcardTLS загружает готовый wildcard-сертификат из файлов. Используется,
+// когда сертификат выпущен вручную (certbot/acme.sh) и ACME на старте не нужен.
+func loadWildcardTLS(tlsCfg *config.TLSConfig) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(tlsCfg.WildcardCertFile, tlsCfg.WildcardKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return &cert, nil
+		},
+	}, nil
+}
+
 // newWildcardCertmagic только собирает конфиг, без обращения к ACME.
 func newWildcardCertmagic(tlsCfg *config.TLSConfig, logger *zap.Logger) (*certmagic.Config, func(), []string, error) {
 	wildcards := wildcardDomains(tlsCfg.Domains)
