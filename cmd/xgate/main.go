@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 const version = "0.1.0"
@@ -30,6 +32,8 @@ func main() {
 	switch os.Args[1] {
 	case "build":
 		buildCmd(os.Args[2:])
+	case "list":
+		listCmd(os.Args[2:])
 	case "version", "-version", "--version":
 		fmt.Printf("xgate %s\n", version)
 	case "help", "-h", "--help":
@@ -45,22 +49,29 @@ func usage() {
 
 Usage:
   xgate build [flags]
+  xgate list --manifest <file>
   xgate version
 
-Flags:
-  --src <dir>       gateway source root (default ".")
-  --output <file>   output binary (default "xgate-gateway")
-  --with <spec>     module[@version][=replacement]; repeatable
-  --tags <tags>     extra go build tags
-  --keep            keep the temporary build directory
+Build flags:
+  --src <dir>         gateway source root (default ".")
+  --output <file>     output binary (default "xgate-gateway")
+  --manifest <file>   YAML manifest with modules
+  --with <spec>       module[@version][=replacement]; repeatable
+  --lock <file>       lock file (default "xgate.lock" with --manifest)
+  --no-lock           do not write a lock file
+  --tags <tags>       extra go build tags
+  --keep              keep the temporary build directory
 `)
 	os.Exit(2)
 }
 
 func buildCmd(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
-	src := fs.String("src", ".", "gateway source root")
-	output := fs.String("output", "xgate-gateway", "output binary")
+	src := fs.String("src", "", "gateway source root")
+	output := fs.String("output", "", "output binary")
+	manifestPath := fs.String("manifest", "", "YAML manifest with modules")
+	lockPath := fs.String("lock", "", "lock file")
+	noLock := fs.Bool("no-lock", false, "do not write a lock file")
 	tags := fs.String("tags", "", "extra go build tags")
 	keep := fs.Bool("keep", false, "keep temporary build directory")
 	var with stringList
@@ -71,16 +82,67 @@ func buildCmd(args []string) {
 		os.Exit(2)
 	}
 
+	var mf *Manifest
+	if *manifestPath != "" {
+		var err error
+		mf, err = loadManifest(*manifestPath)
+		if err != nil {
+			fatal(err)
+		}
+		if *src == "" {
+			*src = mf.Gateway.Source
+		}
+		if *output == "" {
+			*output = mf.Gateway.Output
+		}
+	}
+	if *src == "" {
+		*src = "."
+	}
+	if *output == "" {
+		*output = "xgate-gateway"
+	}
+
+	var mods []moduleSpec
+	if mf != nil {
+		baseDir := filepath.Dir(*manifestPath)
+		for _, m := range mf.Modules {
+			spec, err := specFromManifest(m, baseDir)
+			if err != nil {
+				fatal(err)
+			}
+			mods = append(mods, spec)
+		}
+	}
+	cliMods, err := parseSpecs(with)
+	if err != nil {
+		fatal(err)
+	}
+	mods, err = mergeSpecs(mods, cliMods)
+	if err != nil {
+		fatal(err)
+	}
+
 	root, module, err := moduleRoot(*src)
 	if err != nil {
 		fatal(err)
 	}
-	if err := build(root, module, *output, with, *tags, *keep); err != nil {
+	if err := build(root, module, *output, mods, *tags, *keep); err != nil {
 		fatal(err)
+	}
+	if mf != nil && !*noLock {
+		lock := *lockPath
+		if lock == "" {
+			lock = "xgate.lock"
+		}
+		if err := writeLock(lock, root, module, mods); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("xgate: lock %s\n", lock)
 	}
 }
 
-func build(root, module, output string, specs []string, tags string, keep bool) error {
+func build(root, module, output string, mods []moduleSpec, tags string, keep bool) error {
 	dir, err := os.MkdirTemp("", "xgate-build-*")
 	if err != nil {
 		return err
@@ -91,10 +153,6 @@ func build(root, module, output string, specs []string, tags string, keep bool) 
 		fmt.Printf("xgate: build directory: %s\n", dir)
 	}
 
-	mods, err := parseSpecs(specs)
-	if err != nil {
-		return err
-	}
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(renderMain(module, mods)), 0o644); err != nil {
 		return err
 	}
@@ -143,10 +201,125 @@ func build(root, module, output string, specs []string, tags string, keep bool) 
 	return nil
 }
 
+// Manifest is the reproducible build description.
+type Manifest struct {
+	Gateway struct {
+		Source string `yaml:"source"`
+		Output string `yaml:"output"`
+	} `yaml:"gateway"`
+	Modules []ManifestModule `yaml:"modules"`
+}
+
+type ManifestModule struct {
+	Path        string `yaml:"path"`
+	Version     string `yaml:"version"`
+	Replacement string `yaml:"replacement"`
+}
+
+func loadManifest(path string) (*Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var mf Manifest
+	if err := yaml.Unmarshal(data, &mf); err != nil {
+		return nil, fmt.Errorf("manifest %s: %w", path, err)
+	}
+	for i, m := range mf.Modules {
+		if strings.TrimSpace(m.Path) == "" {
+			return nil, fmt.Errorf("manifest %s: modules[%d].path is required", path, i)
+		}
+	}
+	return &mf, nil
+}
+
+func specFromManifest(m ManifestModule, baseDir string) (moduleSpec, error) {
+	spec := moduleSpec{Path: strings.TrimSpace(m.Path), Version: strings.TrimSpace(m.Version)}
+	if m.Replacement != "" {
+		repl := m.Replacement
+		if !filepath.IsAbs(repl) {
+			repl = filepath.Join(baseDir, repl)
+		}
+		abs, err := filepath.Abs(repl)
+		if err != nil {
+			return moduleSpec{}, err
+		}
+		spec.Replacement = abs
+	}
+	return spec, nil
+}
+
+func mergeSpecs(existing, extra []moduleSpec) ([]moduleSpec, error) {
+	seen := make(map[string]bool, len(existing)+len(extra))
+	out := make([]moduleSpec, 0, len(existing)+len(extra))
+	for _, m := range append(existing, extra...) {
+		if seen[m.Path] {
+			return nil, fmt.Errorf("duplicate module %q", m.Path)
+		}
+		seen[m.Path] = true
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func writeLock(path, root, module string, mods []moduleSpec) error {
+	lock := struct {
+		SourceSHA string       `yaml:"source_sha"`
+		Gateway   string       `yaml:"gateway"`
+		Modules   []moduleSpec `yaml:"modules"`
+	}{
+		SourceSHA: sourceSHA(root),
+		Gateway:   module,
+		Modules:   mods,
+	}
+	data, err := yaml.Marshal(lock)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append([]byte("# generated by xgate\n"), data...), 0o644)
+}
+
+func sourceSHA(root string) string {
+	out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func listCmd(args []string) {
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	manifestPath := fs.String("manifest", "xgate.yaml", "YAML manifest with modules")
+	lockPath := fs.String("lock", "", "lock file (default xgate.lock)")
+	_ = fs.Parse(args)
+	mf, err := loadManifest(*manifestPath)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Printf("gateway %s\n", mf.Gateway.Source)
+	for _, m := range mf.Modules {
+		fmt.Printf("  module %s %s\n", m.Path, m.Version)
+	}
+	lock := *lockPath
+	if lock == "" {
+		lock = "xgate.lock"
+	}
+	if data, err := os.ReadFile(lock); err == nil {
+		var resolved struct {
+			Modules []moduleSpec `yaml:"modules"`
+		}
+		if yaml.Unmarshal(data, &resolved) == nil {
+			for _, m := range resolved.Modules {
+				fmt.Printf("  locked %s %s\n", m.Path, m.Version)
+			}
+		}
+	}
+}
+
 type moduleSpec struct {
-	Path        string
-	Version     string
-	Replacement string
+	Path        string `yaml:"path"`
+	Version     string `yaml:"version,omitempty"`
+	Replacement string `yaml:"replacement,omitempty"`
 }
 
 func parseSpecs(specs []string) ([]moduleSpec, error) {

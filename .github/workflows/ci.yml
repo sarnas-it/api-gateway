@@ -57,6 +57,29 @@ jobs:
       - name: Go test
         run: go test ./... -count=1
 
+  xgate:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build xgate
+        run: go build -o /tmp/xgate ./cmd/xgate
+
+      - name: Build standard gateway
+        run: /tmp/xgate build --src . --output /tmp/gateway
+
+      - name: Build with Cloudflare module
+        run: /tmp/xgate build --src . --with code.sarnas.ru/api-gateway/plugins/dns/cloudflare --output /tmp/gateway-cloudflare
+
+      - name: Verify binaries
+        run: test -x /tmp/gateway && test -x /tmp/gateway-cloudflare
+
   build:
     needs: [lint, test]
     runs-on: ubuntu-latest
