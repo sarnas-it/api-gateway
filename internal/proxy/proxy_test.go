@@ -486,6 +486,8 @@ func TestReadBodyLimited(t *testing.T) {
 
 func intPtr(v int) *int { return &v }
 
+func boolPtr(v bool) *bool { return &v }
+
 func poolTarget(name string, weight int) *TargetProxy {
 	return &TargetProxy{
 		config:           &config.TargetConfig{Name: name, Weight: intPtr(weight)},
@@ -815,6 +817,48 @@ func TestCheckRoles(t *testing.T) {
 	}
 }
 
+func TestModifyRequest_RouteAuthInheritsGlobalRequired(t *testing.T) {
+	mp := newTestMultiProxy(t, true)
+	r := httptest.NewRequest("GET", "/api/anything", nil)
+	rule := &config.RoutingRule{
+		PathPrefix: "/api",
+		TargetName: "x",
+		Auth:       &config.AuthRule{Roles: []string{"admin"}},
+	}
+
+	if err := mp.modifyRequest(r, nil, rule); err == nil {
+		t.Fatal("route auth without required must inherit global jwt.required and reject an anonymous request")
+	}
+}
+
+func TestModifyRequest_ExplicitFalseOverridesGlobal(t *testing.T) {
+	mp := newTestMultiProxy(t, true)
+	r := httptest.NewRequest("GET", "/api/anything", nil)
+	rule := &config.RoutingRule{
+		PathPrefix: "/api",
+		TargetName: "x",
+		Auth:       &config.AuthRule{Required: boolPtr(false)},
+	}
+
+	if err := mp.modifyRequest(r, nil, rule); err != nil {
+		t.Fatalf("explicit required:false must override global jwt.required, got %v", err)
+	}
+}
+
+func TestModifyRequest_RolesRequireAuthEvenWithGlobalFalse(t *testing.T) {
+	mp := newTestMultiProxy(t, false)
+	r := httptest.NewRequest("GET", "/api/anything", nil)
+	rule := &config.RoutingRule{
+		PathPrefix: "/api",
+		TargetName: "x",
+		Auth:       &config.AuthRule{Roles: []string{"admin"}},
+	}
+
+	if err := mp.modifyRequest(r, nil, rule); err == nil {
+		t.Fatal("roles must imply auth even when global jwt.required is false")
+	}
+}
+
 func TestModifyRequest_RoleChecks(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -826,31 +870,31 @@ func TestModifyRequest_RoleChecks(t *testing.T) {
 		{
 			name:  "any-of allows matching role",
 			roles: []interface{}{"support"},
-			auth:  &config.AuthRule{Required: true, Roles: []string{"admin", "support"}},
+			auth:  &config.AuthRule{Required: boolPtr(true), Roles: []string{"admin", "support"}},
 			want:  true,
 		},
 		{
 			name:  "any-of rejects no matching role",
 			roles: []interface{}{"user"},
-			auth:  &config.AuthRule{Required: true, Roles: []string{"admin"}},
+			auth:  &config.AuthRule{Required: boolPtr(true), Roles: []string{"admin"}},
 			want:  false,
 		},
 		{
 			name:  "all-of rejects missing role",
 			roles: []interface{}{"admin"},
-			auth:  &config.AuthRule{Required: true, RolesAll: []string{"admin", "mfa"}},
+			auth:  &config.AuthRule{Required: boolPtr(true), RolesAll: []string{"admin", "mfa"}},
 			want:  false,
 		},
 		{
 			name: "missing claim rejected on role-protected route",
 			omit: true,
-			auth: &config.AuthRule{Required: true, Roles: []string{"admin"}},
+			auth: &config.AuthRule{Required: boolPtr(true), Roles: []string{"admin"}},
 			want: false,
 		},
 		{
 			name: "no roles configured allows",
 			omit: true,
-			auth: &config.AuthRule{Required: true},
+			auth: &config.AuthRule{Required: boolPtr(true)},
 			want: true,
 		},
 	}

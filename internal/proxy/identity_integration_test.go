@@ -57,7 +57,7 @@ func TestModifyRequest_ExternalTokenMapsToOurUser(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/v1/anything", nil)
 	req.Header.Set("Authorization", "Bearer "+signed)
-	rule := &config.RoutingRule{Auth: &config.AuthRule{Required: true}}
+	rule := &config.RoutingRule{Auth: &config.AuthRule{Required: boolPtr(true)}}
 
 	if err := mp.modifyRequest(req, &cfg.Targets[0], rule); err != nil {
 		t.Fatalf("modifyRequest error: %v", err)
@@ -121,10 +121,10 @@ func TestModifyRequest_ExternalTokenRoleGate(t *testing.T) {
 		auth    *config.AuthRule
 		wantErr bool
 	}{
-		{"any-of one of several allowed", &config.AuthRule{Required: true, Roles: []string{"editor", "admin"}}, false},
-		{"any-of none rejected", &config.AuthRule{Required: true, Roles: []string{"admin"}}, true},
-		{"all-of missing role rejected", &config.AuthRule{Required: true, RolesAll: []string{"viewer", "admin"}}, true},
-		{"all-of all present allowed", &config.AuthRule{Required: true, RolesAll: []string{"viewer", "editor"}}, false},
+		{"any-of one of several allowed", &config.AuthRule{Required: boolPtr(true), Roles: []string{"editor", "admin"}}, false},
+		{"any-of none rejected", &config.AuthRule{Required: boolPtr(true), Roles: []string{"admin"}}, true},
+		{"all-of missing role rejected", &config.AuthRule{Required: boolPtr(true), RolesAll: []string{"viewer", "admin"}}, true},
+		{"all-of all present allowed", &config.AuthRule{Required: boolPtr(true), RolesAll: []string{"viewer", "editor"}}, false},
 	}
 
 	for _, tc := range cases {
@@ -186,7 +186,7 @@ func TestModifyRequest_ExternalTokenAppliesSignV3(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+signed)
 	rule := &config.RoutingRule{
 		PathPrefix: "/api/v1",
-		Auth:       &config.AuthRule{Required: true},
+		Auth:       &config.AuthRule{Required: boolPtr(true)},
 		SignV3:     &config.SignV3Config{ServiceID: "admin-front", KeyID: "1", Secret: "v3-secret"},
 	}
 

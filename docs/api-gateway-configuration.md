@@ -265,7 +265,7 @@ headers:
 | `preserve_host` | bool | `false` | Передавать бэкенду исходный `Host` (по умолчанию — host таргета) | `true` |
 | `buffer_request_body` | bool | `true` | Читать тело в память (нужно аудит-вебхукам). `false` — стриминг без обрезания | `false` |
 
-`auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`).
+`auth`: `required` (bool, по умолчанию наследует глобальный `jwt.required`; непустые `roles`/`roles_all` сами требуют токен, даже если глобальный `required: false`), `roles` ([]string, достаточно **любой** из перечисленных ролей), `roles_all` ([]string, должны присутствовать **все** перечисленные роли), `strip_token` (bool, наследует `headers.strip_authorization`).
 
 `roles` и `roles_all` читают claim `roles` токена (строка или массив строк). Если заданы оба списка, роль должна пройти оба условия: `(любая из roles) И (все из roles_all)`. Если claim `roles` отсутствует или его тип не строка и не массив строк, маршрут с требованиями ролей отвечает 401.
 

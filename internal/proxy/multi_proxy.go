@@ -541,9 +541,9 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 
 	authRequired := mp.config.Load().JWT.Required
 	stripToken := mp.config.Load().Headers.StripAuthorization
-	if rule != nil && rule.Auth != nil {
-		authRequired = rule.Auth.Required
-		if rule.Auth.StripToken != nil {
+	if rule != nil {
+		authRequired = rule.Auth.EffectiveRequired(authRequired)
+		if rule.Auth != nil && rule.Auth.StripToken != nil {
 			stripToken = *rule.Auth.StripToken
 		}
 	}
@@ -563,7 +563,7 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		if err != nil {
 			// Наш JWT не прошёл — пробуем внешние identity-провайдеры на
 			// защищённых маршрутах (наш JWT-путь не меняется).
-			if mp.identity != nil && rule != nil && rule.Auth != nil && rule.Auth.Required {
+			if mp.identity != nil && rule != nil && rule.Auth != nil && authRequired {
 				user, ierr := mp.identity.Resolve(r.Context(), authHeader)
 				if ierr != nil {
 					return fmt.Errorf("invalid token: %w", ierr)
