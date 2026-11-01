@@ -1303,6 +1303,11 @@ func normalizeRequestHost(host string) string {
 	if host == "" {
 		return ""
 	}
+	// Обычный случай — имя хоста без порта. Без этой проверки
+	// net.SplitHostPort создаёт *AddrError на каждом запросе.
+	if !strings.Contains(host, ":") {
+		return host
+	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		return strings.Trim(h, "[]")
 	}
@@ -1333,22 +1338,17 @@ func (c *Config) FindTargetForPath(path string, method string, host ...string) (
 // FindTargetForRequest находит таргет с учётом всех матчеров правила:
 // host, methods, headers, query и path_prefix/path_regex.
 func (c *Config) FindTargetForRequest(r *http.Request) (*TargetConfig, *RoutingRule) {
-	var (
-		queryOnce bool
-		query     url.Values
-	)
-	return c.findTarget(r.URL.Path, r.Method, r.Host, r.Header, func() url.Values {
-		if !queryOnce {
-			query = r.URL.Query()
-			queryOnce = true
-		}
-		return query
-	})
+	return c.findTarget(r.URL.Path, r.Method, r.Host, r.Header, r.URL)
 }
 
-// findTarget — общий матчер. queryFunc вызывается только если в правилах
-// действительно есть query-матчеры (парсинг query на каждом запросе не нужен).
-func (c *Config) findTarget(path, method, host string, header http.Header, queryFunc func() url.Values) (*TargetConfig, *RoutingRule) {
+// findTarget — общий матчер. Query парсится только если до него дошла
+// проверка правила с query-матчерами: конфиги без таких правил не платят
+// за r.URL.Query() на каждом запросе. u == nil у путей без запроса.
+func (c *Config) findTarget(path, method, host string, header http.Header, u *url.URL) (*TargetConfig, *RoutingRule) {
+	var (
+		query       url.Values
+		queryParsed bool
+	)
 	var bestMatch *RoutingRule
 	bestScore := -1
 
@@ -1391,8 +1391,17 @@ func (c *Config) findTarget(path, method, host string, header http.Header, query
 		if !headerMatches(rule.Headers, header) {
 			continue
 		}
-		if len(rule.Query) > 0 && !queryMatches(rule.Query, queryFunc) {
-			continue
+		if len(rule.Query) > 0 {
+			if u == nil {
+				continue
+			}
+			if !queryParsed {
+				query = u.Query()
+				queryParsed = true
+			}
+			if !queryMatches(rule.Query, query) {
+				continue
+			}
 		}
 
 		if rule.PathRegex != "" {
@@ -1467,14 +1476,10 @@ func headerMatches(want map[string]string, header http.Header) bool {
 
 // queryMatches проверяет все query-матчеры. Пустое ожидаемое значение —
 // «параметр присутствует».
-func queryMatches(want map[string]string, queryFunc func() url.Values) bool {
+func queryMatches(want map[string]string, q url.Values) bool {
 	if len(want) == 0 {
 		return true
 	}
-	if queryFunc == nil {
-		return false
-	}
-	q := queryFunc()
 	for name, value := range want {
 		vals, ok := q[name]
 		if !ok || len(vals) == 0 {
