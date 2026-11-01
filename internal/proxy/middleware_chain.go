@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"code.sarnas.ru/api-gateway/internal/config"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -324,10 +325,14 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		if rule != nil && (rule.ReadTimeout > 0 || rule.WriteTimeout > 0) {
 			rc := http.NewResponseController(rw)
 			if rule.ReadTimeout > 0 {
-				_ = rc.SetReadDeadline(time.Now().Add(rule.ReadTimeout))
+				if err := rc.SetReadDeadline(time.Now().Add(rule.ReadTimeout)); err != nil {
+					mp.logger.Warn("failed to set per-route read deadline", zap.Error(err))
+				}
 			}
 			if rule.WriteTimeout > 0 {
-				_ = rc.SetWriteDeadline(time.Now().Add(rule.WriteTimeout))
+				if err := rc.SetWriteDeadline(time.Now().Add(rule.WriteTimeout)); err != nil {
+					mp.logger.Warn("failed to set per-route write deadline", zap.Error(err))
+				}
 			}
 		}
 
@@ -368,8 +373,21 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			if rule != nil {
 				limit = rule.EffectiveMaxRequestBodySize(limit)
 			}
-			bodyBytes, _ := readBodyLimited(r.Body, limit)
+			bodyBytes, err := readBodyLimited(r.Body, limit)
 			r.Body.Close()
+			if err != nil {
+				status := http.StatusBadRequest
+				message := "failed to read request body"
+				if errors.Is(err, errBodyTooLarge) {
+					status = http.StatusRequestEntityTooLarge
+					message = "request body too large"
+				}
+				mp.setCORSHeaders(rw.Header(), r)
+				http.Error(rw, message, status)
+				mp.metrics.IncRequests(r.Method, r.URL.Path, strconv.Itoa(status))
+				mp.logAccess(reqID, traceID, r, status, time.Since(startTime), target)
+				return
+			}
 			if len(bodyBytes) > 0 && len(bodyBytes) < 65536 {
 				r = r.WithContext(context.WithValue(r.Context(), ctxKeyRequestBody, bodyBytes))
 			}
@@ -411,11 +429,22 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 	})
 }
 
+// errBodyTooLarge сообщает, что тело запроса превысило разрешённый лимит.
+var errBodyTooLarge = errors.New("request body too large")
+
 // readBodyLimited читает тело не более чем limit байт. limit <= 0 — без лимита.
-// Используется аудитом, чтобы не вычитывать тело запроса без ограничения.
+// Читает limit+1 байт, чтобы отличить «ровно по лимиту» от «больше лимита»,
+// и возвращает errBodyTooLarge вместо молчаливого обрезания.
 func readBodyLimited(body io.Reader, limit int64) ([]byte, error) {
-	if limit > 0 {
-		body = io.LimitReader(body, limit)
+	if limit <= 0 {
+		return io.ReadAll(body)
 	}
-	return io.ReadAll(body)
+	b, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, errBodyTooLarge
+	}
+	return b, nil
 }

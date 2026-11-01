@@ -454,16 +454,24 @@ func TestProxyRequest_ZeroMaxRequestBodySizeIsUnlimited(t *testing.T) {
 
 func TestReadBodyLimited(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		limit int64
-		want  string
+		name    string
+		limit   int64
+		want    string
+		wantErr bool
 	}{
-		{"zero is unlimited", 0, "0123456789"},
-		{"negative is unlimited", -1, "0123456789"},
-		{"positive caps read", 4, "0123"},
+		{"zero is unlimited", 0, "0123456789", false},
+		{"negative is unlimited", -1, "0123456789", false},
+		{"exactly at limit", 10, "0123456789", false},
+		{"over limit is an error", 4, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b, err := readBodyLimited(strings.NewReader("0123456789"), tc.limit)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected an error for a body over the limit")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
