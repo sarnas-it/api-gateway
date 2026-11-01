@@ -26,7 +26,7 @@ xgate build \
   --output ./api-gateway-custom
 ```
 
-Для Cloudflare в конфиге:
+В репозитории уже есть модули: `cloudflare`, `desec`, `digitalocean`, `route53`.
 
 ```yaml
 tls:
@@ -34,6 +34,8 @@ tls:
   dns_config:
     api_token: "${CF_API_TOKEN}"
 ```
+
+Параметры остальных: `desec` — `token`/`DESEC_TOKEN`; `digitalocean` — `api_token`/`DO_API_TOKEN`; `route53` — `region`, `profile`, `access_key_id`, `secret_access_key`, `session_token`, `max_retries` (пустые значения берутся из AWS env).
 
 Флаги:
 

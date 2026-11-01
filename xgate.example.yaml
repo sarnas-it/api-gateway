@@ -3,8 +3,11 @@ gateway:
   output: ./bin/api-gateway-custom
 
 modules:
-  # libdns-провайдер для DNS-01. Раскомментируйте и передайте CF_API_TOKEN.
+  # libdns-провайдеры для DNS-01. Раскомментируйте нужный.
   # - path: code.sarnas.ru/api-gateway/plugins/dns/cloudflare
+  # - path: code.sarnas.ru/api-gateway/plugins/dns/desec
+  # - path: code.sarnas.ru/api-gateway/plugins/dns/digitalocean
+  # - path: code.sarnas.ru/api-gateway/plugins/dns/route53
 
   # Локальный форк модуля:
   # - path: github.com/acme/gateway-module
