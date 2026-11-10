@@ -8,7 +8,7 @@ before:
 
 builds:
   - id: api-gateway
-    main: ./cmd/
+    main: ./cmd/gateway
     binary: api-gateway
     env:
       - CGO_ENABLED=0
