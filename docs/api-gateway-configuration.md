@@ -69,7 +69,7 @@ permissions:
 
 Метрики выключены по умолчанию, потому что их сбор добавляет работу на каждый запрос. Включайте `metrics_enabled` осознанно; `metrics_allowed_ips` ограничивает доступ к обоим эндпоинтам, если они смотрят наружу.
 
-`/metrics` остаётся в формате `expvar` для дашборда и `monitoring-glue`. `/metrics/prometheus` отдаёт Prometheus-формат с гистограммой `gateway_request_duration_seconds` (лейблы `method`, `route`, `status`), счётчиком `gateway_requests_total`, gauge `gateway_active_requests`/`gateway_target_up` и счётчиком `gateway_rate_limit_denials_total`. Лейбл `route` укрупнён (`/api/blog/posts` → `/api/blog`), чтобы не раздувать кардинальность.
+`/metrics` остаётся в формате `expvar` для дашборда и `monitoring-glue`. `/metrics/prometheus` отдаёт Prometheus-формат с гистограммой `gateway_request_duration_seconds` (лейблы `method`, `route`, `status`), счётчиком `gateway_requests_total`, gauge `gateway_active_requests`/`gateway_target_up` и счётчиком `gateway_rate_limit_denials_total`. Лейбл `route` — это `target_name` маршрута из конфига, который обслужил запрос (`unmatched` — если маршрута нет), а не путь из URL: набор маршрутов конечен, а пути ботов — нет. В `/metrics` (expvar) ключи `gateway_requests_total`/`gateway_request_duration_ms` собраны по тем же `route`, `method` и `status`, поэтому кардинальность карт ограничена маршрутами.
 
 ## server
 

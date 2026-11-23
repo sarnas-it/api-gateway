@@ -240,9 +240,10 @@ func corsPreflightMiddleware(mp *MultiProxy, metrics *Metrics) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodOptions {
+				target, rule := mp.config.Load().FindTargetForRequest(r)
 				mp.setCORSHeaders(w.Header(), r)
 				w.WriteHeader(http.StatusOK)
-				metrics.IncRequests(r.Method, r.URL.Path, "200")
+				metrics.IncRequests(r.Method, routeLabel(rule, target), "200")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -267,6 +268,9 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		reqID, traceID := requestIDsFromContext(r.Context())
 
 		target, rule := mp.config.Load().FindTargetForRequest(r)
+		// route — метка метрик, ограниченная набором маршрутов конфига
+		// (см. routeLabel): URL-путь давал неограниченную кардинальность.
+		route := routeLabel(rule, target)
 
 		rw := newResponseWriter(w)
 		// Захват тела ответа нужен только когда хотя бы один on_response вебхук
@@ -279,7 +283,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		if target == nil {
 			mp.setCORSHeaders(rw.Header(), r)
 			http.Error(rw, "No route found", http.StatusNotFound)
-			mp.metrics.IncRequests(r.Method, r.URL.Path, "404")
+			mp.metrics.IncRequests(r.Method, route, "404")
 			mp.logAccess(reqID, traceID, r, 404, 0, nil)
 			return
 		}
@@ -304,7 +308,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		if targetProxy == nil {
 			mp.setCORSHeaders(rw.Header(), r)
 			http.Error(rw, "Target unavailable", http.StatusServiceUnavailable)
-			mp.metrics.IncRequests(r.Method, r.URL.Path, "503")
+			mp.metrics.IncRequests(r.Method, route, "503")
 			mp.logAccess(reqID, traceID, r, 503, 0, target)
 			return
 		}
@@ -319,7 +323,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 				mp.setCORSHeaders(rw.Header(), r)
 				http.Error(rw, "Too many requests", http.StatusTooManyRequests)
 				mp.metrics.IncRateLimitDenial()
-				mp.metrics.IncRequests(r.Method, r.URL.Path, "429")
+				mp.metrics.IncRequests(r.Method, route, "429")
 				mp.logAccess(reqID, traceID, r, 429, 0, target)
 				return
 			}
@@ -363,7 +367,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			r.ContentLength > limit {
 			mp.setCORSHeaders(rw.Header(), r)
 			http.Error(rw, "request body too large", http.StatusRequestEntityTooLarge)
-			mp.metrics.IncRequests(r.Method, r.URL.Path, "413")
+			mp.metrics.IncRequests(r.Method, route, "413")
 			mp.logAccess(reqID, traceID, r, 413, 0, target)
 			return
 		}
@@ -372,7 +376,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		if err := mp.modifyRequest(r, target, rule); err != nil {
 			mp.setCORSHeaders(rw.Header(), r)
 			http.Error(rw, err.Error(), http.StatusUnauthorized)
-			mp.metrics.IncRequests(r.Method, r.URL.Path, "401")
+			mp.metrics.IncRequests(r.Method, route, "401")
 			mp.logAccess(reqID, traceID, r, 401, 0, target)
 			return
 		}
@@ -398,7 +402,7 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 				}
 				mp.setCORSHeaders(rw.Header(), r)
 				http.Error(rw, message, status)
-				mp.metrics.IncRequests(r.Method, r.URL.Path, strconv.Itoa(status))
+				mp.metrics.IncRequests(r.Method, route, strconv.Itoa(status))
 				mp.logAccess(reqID, traceID, r, status, time.Since(startTime), target)
 				return
 			}
@@ -436,8 +440,8 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 			r = r.WithContext(context.WithValue(r.Context(), ctxKeyResponseContentType, rw.CapturedContentType()))
 		}
 
-		mp.metrics.IncRequests(r.Method, r.URL.Path, strconv.Itoa(rw.statusCode))
-		mp.metrics.ObserveDuration(r.Method, r.URL.Path, strconv.Itoa(rw.statusCode), time.Since(startTime))
+		mp.metrics.IncRequests(r.Method, route, strconv.Itoa(rw.statusCode))
+		mp.metrics.ObserveDuration(r.Method, route, strconv.Itoa(rw.statusCode), time.Since(startTime))
 
 		// Publish on_response webhooks
 		if mp.publisher != nil {

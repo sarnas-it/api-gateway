@@ -4,9 +4,10 @@ import (
 	"expvar"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
+
+	"code.sarnas.ru/api-gateway/internal/config"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -83,36 +84,42 @@ func NewMetrics(enabled bool) *Metrics {
 	return m
 }
 
-func (m *Metrics) IncRequests(method, path, status string) {
+func (m *Metrics) IncRequests(method, route, status string) {
 	if !m.enabled {
 		return
 	}
-	key := method + ":" + path + ":" + status
+	key := method + ":" + route + ":" + status
 	m.requestsTotal.Add(key, 1)
-	m.promRequests.WithLabelValues(method, routeLabel(path), status).Inc()
+	m.promRequests.WithLabelValues(method, route, status).Inc()
 }
 
-func (m *Metrics) ObserveDuration(method, path, status string, d time.Duration) {
+func (m *Metrics) ObserveDuration(method, route, status string, d time.Duration) {
 	if !m.enabled {
 		return
 	}
-	key := method + ":" + path
+	key := method + ":" + route
 	m.requestDuration.Add(key, d.Milliseconds())
-	m.promDuration.WithLabelValues(method, routeLabel(path), status).Observe(d.Seconds())
+	m.promDuration.WithLabelValues(method, route, status).Observe(d.Seconds())
 }
 
-// routeLabel снижает кардинальность: /api/blog/posts → /api/blog,
-// /blog/foo → /blog, / → /.
-func routeLabel(path string) string {
-	p := strings.Trim(path, "/")
-	if p == "" {
-		return "/"
+// routeLabel — значение метки route: имя маршрута (таргета) из конфига,
+// который обслужил запрос.
+//
+// Путь из запроса для метки не годится: боты перебирают случайные URL, каждый
+// новый первый сегмент (/wp-login.php, /.env, /<случайная строка>) добавлял
+// новую серию на все четыре семейства gateway_*, включая 13 бакетов
+// гистограммы. Кардинальность росла без предела и выедала
+// -remoteWrite.maxHourlySeries у vmagent, из-за чего переставали скрапиться
+// остальные таргеты. Маршрутов в конфиге конечное число, поэтому метка
+// ограничена их набором; запрос без маршрута — "unmatched".
+func routeLabel(rule *config.RoutingRule, target *config.TargetConfig) string {
+	if rule != nil && rule.TargetName != "" {
+		return rule.TargetName
 	}
-	parts := strings.Split(p, "/")
-	if parts[0] == "api" && len(parts) > 1 {
-		return "/" + parts[0] + "/" + parts[1]
+	if target != nil && target.Name != "" {
+		return target.Name
 	}
-	return "/" + parts[0]
+	return "unmatched"
 }
 
 func (m *Metrics) IncRateLimitDenial() {
