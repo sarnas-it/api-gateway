@@ -2,8 +2,9 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 )
 
@@ -94,9 +95,17 @@ func (rw *responseWriter) CapturedContentType() string {
 	return rw.capture.contentType
 }
 
-// generateRequestID возвращает короткий ID для трассировки/логов.
-// Не требует криптографической стойкости, поэтому используется быстрый
-// math/rand/v2 (без syscall на каждый вызов) вместо crypto/rand.
+// generateRequestID возвращает 128-битный идентификатор запроса в hex.
+// ID уходит клиенту в X-Request-Id и используется как ключ обращения в
+// поддержке, поэтому он должен быть непредсказуемым: math/rand позволял
+// угадать чужой идентификатор. crypto/rand на 16 байт стоит на порядки
+// дешевле любого сетевого вызова и на горячем пути не заметен.
 func generateRequestID() string {
-	return fmt.Sprintf("%016x", rand.Uint64())
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		// crypto/rand.Read не возвращает ошибок на поддерживаемых платформах.
+		// Предсказуемый fallback здесь хуже падения: recovery отдаст 500.
+		panic(fmt.Sprintf("crypto/rand: %v", err))
+	}
+	return hex.EncodeToString(id[:])
 }
