@@ -106,6 +106,16 @@ func (mp *MultiProxy) clientIP(r *http.Request) string {
 	return getClientIP(r, trusted)
 }
 
+// peerIsTrustedProxy сообщает, входит ли непосредственный пир (RemoteAddr)
+// в server.trusted_proxies. Единственная точка решения о доверии входящей
+// forwarding-цепочке — используется и для clientIP, и для X-Forwarded-For.
+func (mp *MultiProxy) peerIsTrustedProxy(r *http.Request) bool {
+	mp.mu.RLock()
+	trusted := mp.trustedProxies
+	mp.mu.RUnlock()
+	return ipTrusted(hostOnly(r.RemoteAddr), trusted)
+}
+
 // getClientIP возвращает клиентский IP. X-Forwarded-For учитывается только
 // если непосредственный пир (RemoteAddr) входит в trusted. Цепочка читается
 // справа налево: первый недоверенный адрес — клиентский, всё левее —

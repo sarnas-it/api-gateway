@@ -267,6 +267,17 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		startTime := time.Now()
 		reqID, traceID := requestIDsFromContext(r.Context())
 
+		// Путь проверяется и нормализуется до маршрутизации: FindTargetForRequest
+		// не должен матчить "/admin/../public" по правилу /admin, а бэкенд —
+		// получать traversal или закодированные слэши.
+		if err := normalizeRequestPath(r); err != nil {
+			mp.setCORSHeaders(w.Header(), r)
+			http.Error(w, "invalid request path", http.StatusBadRequest)
+			mp.metrics.IncRequests(r.Method, routeLabel(nil, nil), "400")
+			mp.logAccess(reqID, traceID, r, 400, time.Since(startTime), nil)
+			return
+		}
+
 		target, rule := mp.config.Load().FindTargetForRequest(r)
 		// route — метка метрик, ограниченная набором маршрутов конфига
 		// (см. routeLabel): URL-путь давал неограниченную кардинальность.
@@ -355,10 +366,10 @@ func (mp *MultiProxy) proxyHandler() http.Handler {
 		}
 
 		if rule != nil && rule.PreserveHost {
+			// Публичный Host для бэкенда (WebDAV сверяет с ним абсолютный
+			// Destination в MOVE/COPY). X-Forwarded-Host выставляет
+			// applyForwardedHeaders — всегда, не только здесь.
 			r.Header.Set(internalHostHeader, r.Host)
-			if r.Header.Get("X-Forwarded-Host") == "" {
-				r.Header.Set("X-Forwarded-Host", r.Host)
-			}
 		}
 
 		// Быстрый отказ по заявленному размеру: обрезать тело молча нельзя

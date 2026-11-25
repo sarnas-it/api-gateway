@@ -643,6 +643,11 @@ func (mp *MultiProxy) newReverseProxy(target *TargetProxy) *httputil.ReverseProx
 
 // modifyRequest модифицирует запрос перед отправкой
 func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetConfig, rule *config.RoutingRule) error {
+	// Forwarding-заголовки — до всех early-return: клиент не должен
+	// протащить свой X-Forwarded-Host/Proto даже на маршруте с
+	// необязательной аутентификацией.
+	mp.applyForwardedHeaders(r)
+
 	// Identity-заголовки выставляет только gateway: клиент не должен иметь
 	// возможности их подделать. Вычищаем входящие identity-заголовки (как
 	// жёстко заданные X-User-*/signing, так и настроенные под произвольные
@@ -738,26 +743,21 @@ func (mp *MultiProxy) modifyRequest(r *http.Request, targetCfg *config.TargetCon
 		r.Header.Del("Authorization")
 	}
 
-	if clientIP := r.Header.Get("X-Forwarded-For"); clientIP == "" {
-		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
-	}
-
 	return nil
 }
 
 // finishRequestHeaders — общий хвост modifyRequest для путей, которые
-// аутентифицируют запрос сами (auth-коннектор): add_headers, strip_token, XFF.
+// аутентифицируют запрос сами (auth-коннектор): add_headers, strip_token,
+// forwarding-заголовки.
 func (mp *MultiProxy) finishRequestHeaders(r *http.Request, stripToken bool) error {
+	mp.applyForwardedHeaders(r)
+
 	for header, value := range mp.config.Load().Headers.AddHeaders {
 		r.Header.Set(header, value)
 	}
 
 	if stripToken {
 		r.Header.Del("Authorization")
-	}
-
-	if clientIP := r.Header.Get("X-Forwarded-For"); clientIP == "" {
-		r.Header.Set("X-Forwarded-For", r.RemoteAddr)
 	}
 
 	return nil
