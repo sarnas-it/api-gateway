@@ -203,8 +203,9 @@ Per-IP limiters are evicted after an hour idle.
 `headers.cors` is an origin allowlist: an exact origin is reflected and gets
 `Access-Control-Allow-Credentials`, `*` is returned without credentials, an
 origin outside the list gets no CORS headers. Any `OPTIONS` is treated as a
-preflight and answered `200`. With `application.env: dev` and no `cors`
-section, a lenient origin-reflecting mode is enabled.
+preflight and answered `200`. CORS headers are only emitted when `headers.cors`
+is explicitly enabled (`enabled: true` and `allowed_origins`);
+`application.env: dev` no longer enables a lenient mode by itself.
 
 ## Basic Auth
 

@@ -336,8 +336,9 @@ Per-route отвечает `429` без `Retry-After`, глобальный — 
 `headers.cors` — allowlist источников: точный origin отражается и получает
 `Access-Control-Allow-Credentials`, `*` возвращается без credentials, origin
 вне списка CORS-заголовков не получает. Любой `OPTIONS` обрабатывается как
-preflight и отвечает `200`. В `application.env: dev` при отсутствии секции
-`cors` включается мягкий режим с отражением origin.
+preflight и отвечает `200`. CORS выставляется только при явной секции
+`headers.cors` (`enabled: true` и `allowed_origins`); `application.env: dev`
+сам по себе мягкий режим больше не включает.
 
 ## Basic Auth
 

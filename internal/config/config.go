@@ -39,6 +39,13 @@ type Config struct {
 	Plugins map[string]map[string]string `yaml:"plugins"`
 }
 
+// DevWithoutCORS сообщает, что env: dev больше не включает мягкий CORS,
+// а секция headers.cors не задана. Используется для предупреждений при
+// старте и в -check.
+func (c *Config) DevWithoutCORS() bool {
+	return c.Env == "dev" && (c.Headers.CORS == nil || !c.Headers.CORS.Enabled)
+}
+
 // HTTP3Config — HTTP/3 (QUIC) поверх того же TLS-конфига.
 type HTTP3Config struct {
 	Enabled bool `yaml:"enabled"`

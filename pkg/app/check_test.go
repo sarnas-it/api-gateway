@@ -76,6 +76,42 @@ func TestRunCheck_StrictFailsOnUnknownKey(t *testing.T) {
 	}
 }
 
+// env: dev без headers.cors — предупреждение, но не ошибка.
+func TestRunCheck_DevWithoutCORSWarns(t *testing.T) {
+	cfg := "application:\n  env: \"dev\"\n" + validConfig
+	var out, errOut bytes.Buffer
+	code := runCheck(writeTemp(t, cfg), false, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "CORS") || !strings.Contains(errOut.String(), "headers.cors") {
+		t.Fatalf("stderr = %q, want CORS warning pointing to headers.cors", errOut.String())
+	}
+}
+
+// -strict относится к неизвестным ключам, а не к CORS-предупреждению.
+func TestRunCheck_DevWithoutCORSStrictStillOK(t *testing.T) {
+	cfg := "application:\n  env: \"dev\"\n" + validConfig
+	var out, errOut bytes.Buffer
+	code := runCheck(writeTemp(t, cfg), true, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+}
+
+// С явно включённой секцией cors предупреждения нет.
+func TestRunCheck_DevWithCORSDoesNotWarn(t *testing.T) {
+	cfg := "application:\n  env: \"dev\"\nheaders:\n  cors:\n    enabled: true\n    allowed_origins: [\"https://app.example\"]\n" + validConfig
+	var out, errOut bytes.Buffer
+	code := runCheck(writeTemp(t, cfg), false, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "CORS") {
+		t.Fatalf("stderr = %q, want no CORS warning", errOut.String())
+	}
+}
+
 func TestRunCheck_MissingEnvFails(t *testing.T) {
 	os.Unsetenv("CHECK_MISSING_ENV")
 	var out, errOut bytes.Buffer

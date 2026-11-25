@@ -60,7 +60,7 @@ permissions:
 
 | Поле | Тип | По умолчанию | Смысл и значения | Пример |
 |---|---|---|---|---|
-| `env` | string | `""` | `dev` включает мягкий CORS (reflect origin + credentials) и dev-логи. Любое другое значение — обычный режим | `prod` |
+| `env` | string | `""` | `dev` включает dev-логи. CORS задаётся только секцией `headers.cors` (в `dev` мягкий режим больше не включается) | `prod` |
 | `health_check` | bool | `false` | Включает фоновые health-проверки таргетов, у которых задан `health_check` | `true` |
 | `circuit_breaker` | bool | `false` | Включает circuit breaker на ошибках транспорта | `true` |
 | `metrics_enabled` | bool | `false` | Собирает метрики и открывает `/metrics` (expvar) и `/metrics/prometheus` | `true` |
@@ -328,7 +328,7 @@ headers:
     max_age: 86400
 ```
 
-Правила CORS: при точном совпадении origin он отражается и выставляется `Access-Control-Allow-Credentials`; при `*` возвращается `*` без credentials; не попавший в allowlist origin CORS-заголовков не получает. Любой `OPTIONS` обрабатывается как preflight и возвращает 200. В `env: "dev"` при отсутствии секции `cors` включается мягкий режим с отражением origin.
+Правила CORS: при точном совпадении origin он отражается и выставляется `Access-Control-Allow-Credentials`; при `*` возвращается `*` без credentials; не попавший в allowlist origin CORS-заголовков не получает. Любой `OPTIONS` обрабатывается как preflight и возвращает 200. CORS-заголовки выставляются только при явно включённой секции `cors` (`enabled: true` + `allowed_origins`); `env: "dev"` сам по себе мягкий режим больше не включает.
 
 `sign_header` вычисляется только если заданы и `sign_header`, и `permissions.api_key`, и в токене есть claim `id`.
 
