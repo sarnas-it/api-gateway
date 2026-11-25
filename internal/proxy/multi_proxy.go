@@ -273,6 +273,9 @@ func NewMultiProxy(cfg *config.Config, logger *zap.Logger) (*MultiProxy, error) 
 		trustedProxies: trustedProxies,
 	}
 	mp.config.Store(cfg)
+	if cfg.DevWithoutCORS() {
+		logger.Warn("CORS выключен: env: dev больше не включает мягкий CORS; задайте headers.cors.enabled: true и allowed_origins")
+	}
 	mp.initGlobalLimiter(cfg)
 	mp.tracerProvider, _ = NewTracerProvider("api-gateway", logger)
 
@@ -400,21 +403,6 @@ func (mp *MultiProxy) setCORSHeaders(header http.Header, r *http.Request) {
 		} else {
 			header.Set("Access-Control-Max-Age", corsHeaders["Access-Control-Max-Age"])
 		}
-		header.Add("Vary", "Origin")
-		return
-	}
-
-	if cfg.Env == "dev" {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		header.Set("Access-Control-Allow-Origin", origin)
-		header.Set("Access-Control-Allow-Methods", corsHeaders["Access-Control-Allow-Methods"])
-		header.Set("Access-Control-Allow-Headers", corsHeaders["Access-Control-Allow-Headers"])
-		header.Set("Access-Control-Expose-Headers", corsHeaders["Access-Control-Expose-Headers"])
-		header.Set("Access-Control-Allow-Credentials", corsHeaders["Access-Control-Allow-Credentials"])
-		header.Set("Access-Control-Max-Age", corsHeaders["Access-Control-Max-Age"])
 		header.Add("Vary", "Origin")
 	}
 }

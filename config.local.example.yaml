@@ -254,6 +254,11 @@ headers:
   add_headers:
     X-Gateway-Version: "1.0.0"
     X-Gateway-Name: "API-Gateway"
+  # CORS больше не включается автоматически при env: "dev" — только явной
+  # секцией. Для локального фронтенда раскомментируйте блок:
+  # cors:
+  #   enabled: true
+  #   allowed_origins: ["http://localhost:3000"]
 
 logging:
   level: "debug"

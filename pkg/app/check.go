@@ -21,6 +21,9 @@ func runCheck(path string, strict bool, stdout, stderr io.Writer) int {
 	for _, w := range warnings {
 		fmt.Fprintf(stderr, "warning: unknown config key: %s\n", w)
 	}
+	if cfg.DevWithoutCORS() {
+		fmt.Fprintln(stderr, "warning: CORS выключен: env: dev больше не включает мягкий CORS; задайте headers.cors.enabled: true и allowed_origins")
+	}
 	if err := plugin.ValidateConfig(cfg.Plugins); err != nil {
 		fmt.Fprintf(stderr, "config invalid: %v\n", err)
 		return 1
