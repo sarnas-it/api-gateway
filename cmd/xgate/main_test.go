@@ -92,6 +92,13 @@ modules:
 		!strings.Contains(string(raw), "github.com/acme/plugin") {
 		t.Fatalf("lock = %s", raw)
 	}
+	fi, err := os.Stat(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lock mode = %o, want 600", got)
+	}
 }
 
 func TestCollectDeps(t *testing.T) {
@@ -123,5 +130,24 @@ func TestModuleRoot(t *testing.T) {
 	}
 	if gotRoot != root || gotModule != "example.com/gw" {
 		t.Fatalf("root=%q module=%q", gotRoot, gotModule)
+	}
+}
+
+// Lock-файл содержит граф модулей и версии; посторонним он не нужен.
+// WriteFile не меняет режим существующего файла, поэтому проверяем и его.
+func TestWriteFile0600_TightensExisting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "xgate.lock")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile0600(path, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lock mode = %o, want 600", got)
 	}
 }
