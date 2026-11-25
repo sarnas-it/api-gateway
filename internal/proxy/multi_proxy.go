@@ -102,6 +102,9 @@ func (rc *RouteConfig) pickTarget(cbEnabled bool, hashKey ...string) *TargetProx
 		chosen := healthy[len(healthy)-1].target
 		switch policy {
 		case "random":
+			// #nosec G404 -- выбор таргета балансировщиком не требует криптостойкости:
+			// предсказуемость здесь не даёт атакующему ничего, а crypto/rand на
+			// горячем пути дороже.
 			chosen = healthy[rand.IntN(len(healthy))].target
 		case "least_conn":
 			best := healthy[0].target
