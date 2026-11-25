@@ -53,6 +53,20 @@ func TestParseAndValidate_ExpiredToken(t *testing.T) {
 	}
 }
 
+// Токен без exp при включённой проверке срока невалиден: бессрочный токен
+// не должен проходить на защищённом маршруте.
+func TestParseAndValidate_MissingExp(t *testing.T) {
+	v := newTestValidator(t)
+	token := signToken(jwt.MapClaims{
+		"sub": "123",
+	}, "test-secret")
+
+	_, err := v.ParseAndValidate("Bearer " + token)
+	if err == nil {
+		t.Fatal("expected error for token without exp")
+	}
+}
+
 func TestParseAndValidate_WrongSecret(t *testing.T) {
 	v := newTestValidator(t)
 	token := signToken(jwt.MapClaims{

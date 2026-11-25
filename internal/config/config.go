@@ -1109,9 +1109,15 @@ func (c *Config) validate() error {
 	}
 
 	// Проверяем правила маршрутизации
+	// authRequired — нужен ли JWT хотя бы на одном маршруте: глобально или
+	// per-route (required/roles/roles_all). От этого зависит проверка exp.
+	authRequired := c.JWT.Required
 	poolPolicy := make(map[string]RoutingRule)
 	for i := range c.Routing.Rules {
 		rule := &c.Routing.Rules[i]
+		if rule.Auth.EffectiveRequired(c.JWT.Required) {
+			authRequired = true
+		}
 		if rule.SignV2 && (rule.SignV3 != nil || c.Permissions.APIKey == "") {
 			return fmt.Errorf("routing sign_v2 requires permissions.api_key and cannot coexist with sign_v3")
 		}
@@ -1247,8 +1253,12 @@ func (c *Config) validate() error {
 		return fmt.Errorf("tls.worker_port requires tls.enabled: true")
 	}
 
-	// Проверяем JWT конфигурацию
-	if c.JWT.Required {
+	// Проверяем JWT конфигурацию.
+	// Если токен требуется хотя бы на одном маршруте, срок действия проверяется
+	// всегда: иначе просроченный токен проходил бы на per-route авторизацию.
+	// validate_exp: false остаётся отладочным флагом только для конфигураций без
+	// обязательной аутентификации.
+	if authRequired {
 		c.JWT.ValidateExp = true
 	}
 

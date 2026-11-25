@@ -1484,6 +1484,64 @@ routing:
 	}
 }
 
+// Маршрут с per-route авторизацией требует проверки срока действия токена,
+// иначе просроченный токен проходит на защищённый маршрут.
+func TestLoad_ValidateExpByRouteAuth(t *testing.T) {
+	const targets = `
+targets:
+  - name: "api"
+    url: "http://api:9001"
+routing:
+  rules:
+    - path_prefix: "/api"
+      target_name: "api"
+`
+	tests := []struct {
+		name string
+		auth string
+		want bool
+	}{
+		{
+			name: "per-route required",
+			auth: `      auth:
+        required: true
+`,
+			want: true,
+		},
+		{
+			name: "per-route roles",
+			auth: `      auth:
+        roles: ["admin"]
+`,
+			want: true,
+		},
+		{
+			name: "per-route roles_all",
+			auth: `      auth:
+        roles_all: ["mfa"]
+`,
+			want: true,
+		},
+		{
+			name: "no auth",
+			auth: "",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, _, err := Load(writeTempConfig(t, targets+tt.auth))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.JWT.ValidateExp != tt.want {
+				t.Errorf("JWT.ValidateExp = %v, want %v", cfg.JWT.ValidateExp, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoad_PermissionsEndpointDefaults(t *testing.T) {
 	yaml := `
 targets:

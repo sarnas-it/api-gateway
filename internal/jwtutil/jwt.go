@@ -129,6 +129,9 @@ func (v *JWTValidator) withValidOptions() []jwt.ParserOption {
 
 	if !v.validateExp {
 		opts = append(opts, jwt.WithoutClaimsValidation())
+	} else {
+		// бессрочный токен не должен проходить при проверке срока
+		opts = append(opts, jwt.WithExpirationRequired())
 	}
 
 	opts = append(opts, jwt.WithValidMethods([]string{v.algorithm}))
