@@ -259,7 +259,7 @@ targets:
 | `secret_key` | string | `""` | Симметричный ключ для HMAC | `"${JWT_SECRET}"` |
 | `public_key_file` | string | `""` | PEM-файл публичного ключа для RSA/ECDSA/Ed25519 | `/etc/proxy/public.pem` |
 | `algorithm` | string | `HS256` | `HS256/384/512`, `RS256/384/512`, `ES256/384/512`, `EdDSA`/`ED25519` | `RS256` |
-| `validate_exp` | bool | `false` | Проверять срок действия; принудительно `true`, если `required: true` | `true` |
+| `validate_exp` | bool | `false` | Проверять срок действия. Принудительно `true`, если токен требуется глобально (`required: true`) или хотя бы на одном маршруте (`routing.rules[].auth` с `required: true`, `roles` или `roles_all`). При включённой проверке claim `exp` обязателен: токен без срока отклоняется | `true` |
 | `validate_iss` | bool | `false` | Проверять issuer | `false` |
 | `expected_iss` | string | `""` | Ожидаемый issuer | `"https://auth.example"` |
 | `validate_aud` | bool | `false` | Проверять audience | `false` |
@@ -376,6 +376,8 @@ headers:
 `connector` — единственный аутентификатор маршрута: JWT для него не проверяется, credentials проверяет модуль (API-ключ, introspection и т.п.). Отсутствие identity или ошибка коннектора — 401, `required: false` этого не отключает. Identity раскладывается в заголовки тем же путём, что и JWT (`claim_mappings`, `headers.claim_to_header`, `permissions`, per-route `sign_v3`), роли проверяются так же. Имя коннектора должно быть вкомпилировано, иначе `--check` и старт завершаются ошибкой.
 
 `roles` и `roles_all` читают claim `roles` токена (строка или массив строк). Если заданы оба списка, роль должна пройти оба условия: `(любая из roles) И (все из roles_all)`. Если claim `roles` отсутствует или его тип не строка и не массив строк, маршрут с требованиями ролей отвечает 401.
+
+На маршрутах, где токен требуется (`auth.required: true`, непустые `roles`/`roles_all` или глобальный `jwt.required`), срок действия проверяется всегда, независимо от `jwt.validate_exp`; токен без claim `exp` отклоняется.
 
 ```yaml
 auth:
