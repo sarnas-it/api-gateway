@@ -210,13 +210,25 @@ func (m *Manager) saveState(stateFile string, result Result) {
 		m.log.Warn("discovery: marshal state failed", zap.Error(err))
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(stateFile), 0o755); err != nil {
+	dir := filepath.Dir(stateFile)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		m.log.Warn("discovery: create state dir failed", zap.String("path", stateFile), zap.Error(err))
 		return
 	}
+	// MkdirAll не меняет права уже существующего каталога, а в state лежит
+	// карта внутренней топологии — читать её посторонним нельзя.
+	if err := os.Chmod(dir, 0o750); err != nil {
+		m.log.Warn("discovery: chmod state dir failed", zap.String("path", dir), zap.Error(err))
+	}
 	tmp := stateFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		m.log.Warn("discovery: write state failed", zap.String("path", tmp), zap.Error(err))
+		return
+	}
+	// WriteFile не меняет режим уже созданного .tmp (например, от прошлой
+	// версии с 0644) — фиксируем права перед атомарной подменой.
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		m.log.Warn("discovery: chmod state file failed", zap.String("path", tmp), zap.Error(err))
 		return
 	}
 	if err := os.Rename(tmp, stateFile); err != nil {

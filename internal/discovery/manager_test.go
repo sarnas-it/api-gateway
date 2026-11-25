@@ -588,3 +588,34 @@ func TestManager_UseProviderAfterStart(t *testing.T) {
 		t.Fatal("expected error when setting provider after Start")
 	}
 }
+
+// TestManager_SaveState_Permissions: state discovery — карта внутренней
+// топологии, поэтому каталог 0750, файл 0600. Права уже существующего .tmp
+// тоже должны сужаться, а не оставаться 0644 от прошлой версии.
+func TestManager_SaveState_Permissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stateFile := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(stateFile+".tmp", []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{stateFile: stateFile, log: zap.NewNop()}
+	m.saveState(stateFile, Result{})
+
+	fi, err := os.Stat(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Fatalf("state file mode = %o, want 600", got)
+	}
+	di, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := di.Mode().Perm(); got != 0o750 {
+		t.Fatalf("state dir mode = %o, want 750", got)
+	}
+}
